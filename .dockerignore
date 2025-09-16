@@ -10,6 +10,7 @@ __pycache__/
 
 # Local data
 data/*
+proxies.txt
 !.dockerignore
 !.gitignore
 README_SYSTEM.md

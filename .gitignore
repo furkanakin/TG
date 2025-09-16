@@ -11,6 +11,7 @@ __pycache__/
 Sessions/*
 !Sessions/.gitkeep
 data/
+proxies.txt
 
 # OS
 .DS_Store
