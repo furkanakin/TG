@@ -602,7 +602,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT id, account_name, scheduled_time, status
+                    SELECT id, account_name, scheduled_time, status, proxy_address
                     FROM request_pool 
                     WHERE channel_id = ? AND status = 'Bekliyor'
                     ORDER BY scheduled_time ASC
@@ -611,7 +611,7 @@ class DatabaseManager:
                 
                 requests = []
                 for row in cursor.fetchall():
-                    request_id, account_name, scheduled_time, status = row
+                    request_id, account_name, scheduled_time, status, proxy_address = row
                     # Session dosya adından telefon numarasını çıkar
                     phone_number = account_name.replace('.session', '')
                     requests.append({
@@ -619,7 +619,8 @@ class DatabaseManager:
                         'account_name': account_name,
                         'phone_number': phone_number,
                         'scheduled_time': scheduled_time,
-                        'status': status
+                        'status': status,
+                        'proxy_address': proxy_address
                     })
                 
                 return requests
@@ -627,6 +628,16 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Planlanan istekler alınamadı: {e}")
             return []
+
+    def update_request_proxy(self, request_id: int, proxy_address: str) -> None:
+        """İstek için proxy bilgisini günceller"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('UPDATE request_pool SET proxy_address = ? WHERE id = ?', (proxy_address, request_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"İstek proxy güncellenemedi (ID={request_id}): {e}")
     
     def get_global_planned_requests(self, limit: int = 30) -> List[Dict]:
         """Tüm kanallar için planlanan istekleri döndürür"""
@@ -635,7 +646,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT rp.id, rp.account_name, rp.scheduled_time, rp.status, c.channel_link
+                    SELECT rp.id, rp.account_name, rp.scheduled_time, rp.status, c.channel_link, rp.proxy_address
                     FROM request_pool rp
                     JOIN channels c ON rp.channel_id = c.id
                     WHERE rp.status = 'Bekliyor'
@@ -645,7 +656,7 @@ class DatabaseManager:
                 
                 requests = []
                 for row in cursor.fetchall():
-                    request_id, account_name, scheduled_time, status, channel_link = row
+                    request_id, account_name, scheduled_time, status, channel_link, proxy_address = row
                     # Session dosya adından telefon numarasını çıkar
                     phone_number = account_name.replace('.session', '')
                     requests.append({
@@ -654,7 +665,8 @@ class DatabaseManager:
                         'phone_number': phone_number,
                         'scheduled_time': scheduled_time,
                         'status': status,
-                        'channel_link': channel_link
+                        'channel_link': channel_link,
+                        'proxy_address': proxy_address
                     })
                 
                 return requests

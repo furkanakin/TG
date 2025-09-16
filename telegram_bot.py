@@ -2017,9 +2017,9 @@ Toplam: {len(planned_requests)} istek
 
 """
                 for i, request in enumerate(planned_requests, 1):
-                    # Tarih formatını düzenle (saniye dahil)
-                    scheduled_time = request['scheduled_time'][:19]  # YYYY-MM-DD HH:MM:SS
-                    message += f"`{i}.` {scheduled_time} - {request['phone_number']}\n"
+                    scheduled_time = request['scheduled_time'][:19]
+                    proxy_text = request.get('proxy_address') or '-'
+                    message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {proxy_text}\n"
             
             # Yenile ve Geri dön butonları
             keyboard = [
@@ -2056,9 +2056,9 @@ Toplam: {len(global_requests)} planlanmış istek
 
 """
                 for i, request in enumerate(global_requests, 1):
-                    # Tarih formatını düzenle (saniye dahil)
-                    scheduled_time = request['scheduled_time'][:19]  # YYYY-MM-DD HH:MM:SS
-                    message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']}\n"
+                    scheduled_time = request['scheduled_time'][:19]
+                    proxy_text = request.get('proxy_address') or '-'
+                    message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - {proxy_text}\n"
             
             # Ana menü butonu
             keyboard = [
