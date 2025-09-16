@@ -12,13 +12,11 @@ services:
       - app-network
     volumes:
       - sessions_data:/app/Sessions
-      - db_data:/app/telegram_bot.db
-      - config_data:/app/bot_config.json
+      - data:/app/data
 
 volumes:
   sessions_data:
-  db_data:
-  config_data:
+  data:
 
 networks:
   app-network:

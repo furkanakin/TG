@@ -17,8 +17,14 @@ FIXED_ADMIN_IDS: List[str] = ["1113025571"]
 class BotConfig:
     """Telegram Bot konfigürasyon sınıfı"""
     
-    def __init__(self, config_file: str = "bot_config.json"):
-        self.config_file = config_file
+    def __init__(self, config_file: str = None):
+        # Kalıcı data klasörünü kullan
+        data_dir = os.path.join(os.getcwd(), 'data')
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+        except Exception:
+            pass
+        self.config_file = config_file or os.path.join(data_dir, "bot_config.json")
         self.config = self.load_config()
     
     def load_config(self) -> Dict[str, Any]:

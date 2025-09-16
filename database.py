@@ -17,8 +17,18 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Veritabanı yönetim sınıfı"""
     
-    def __init__(self, db_path: str = "telegram_bot.db"):
+    def __init__(self, db_path: str = None):
         self.db_path = db_path
+        if not self.db_path:
+            # Konteyner içinde kalıcı klasör
+            data_dir = os.path.join(os.getcwd(), 'data')
+            # /app çalışırken bu /app/data olacaktır
+            if not os.path.isdir(data_dir):
+                try:
+                    os.makedirs(data_dir, exist_ok=True)
+                except Exception:
+                    pass
+            self.db_path = os.path.join(data_dir, 'telegram_bot.db')
         self.init_database()
     
     def init_database(self) -> None:
