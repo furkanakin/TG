@@ -1,0 +1,25 @@
+services:
+  python-app:
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile
+    container_name: python-app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - app-network
+    volumes:
+      - sessions_data:/app/Sessions
+      - db_data:/app/telegram_bot.db
+      - config_data:/app/bot_config.json
+
+volumes:
+  sessions_data:
+  db_data:
+  config_data:
+
+networks:
+  app-network:
+    driver: bridge
