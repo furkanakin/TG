@@ -6,7 +6,6 @@ services:
       context: ..
       dockerfile: Docker/Dockerfile
     container_name: python-app
-    # volumes satırını kaldırdık (Coolify storage ile çakışmasın)
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
