@@ -137,18 +137,31 @@ class TelethonManager:
                     proxy_info = proxy_manager.parse_proxy_string(proxy_address)
                     logger.info(f"🌐 Proxy kullanılıyor: {proxy_address}")
                 
-                # Yeni client oluştur
+                # Yeni client oluştur - birden fazla proxy dene
                 client = await self.create_client(account_name, proxy_info)
                 if not client:
-                    logger.warning(f"⚠️ İlk proxy başarısız, alternatif deneniyor: {account_name}")
-                    # Proxy başarısız, alternatif proxy dene
-                    proxy_info = proxy_manager.get_random_proxy()
-                    if proxy_info:
-                        logger.info(f"🔄 Alternatif proxy deneniyor: {proxy_manager.get_proxy_string(proxy_info)}")
-                        client = await self.create_client(account_name, proxy_info)
+                    logger.warning(f"⚠️ İlk proxy başarısız, alternatif proxy'ler deneniyor: {account_name}")
+                    
+                    # Birden fazla alternatif proxy dene (maksimum 5 tane)
+                    max_attempts = 5
+                    for attempt in range(max_attempts):
+                        proxy_info = proxy_manager.get_random_proxy()
+                        if proxy_info:
+                            logger.info(f"🔄 Alternatif proxy {attempt + 1}/{max_attempts} deneniyor: {proxy_manager.get_proxy_string(proxy_info)}")
+                            client = await self.create_client(account_name, proxy_info)
+                            if client:
+                                logger.info(f"✅ Alternatif proxy {attempt + 1} başarılı: {account_name}")
+                                break
+                            else:
+                                # 5 saniye bekle sonraki proxy'ye geç
+                                logger.warning(f"⏳ Proxy {attempt + 1} başarısız, 5 saniye bekleniyor...")
+                                await asyncio.sleep(5)
+                        else:
+                            logger.error(f"❌ Daha fazla proxy bulunamadı: {account_name}")
+                            break
                 
                 if not client:
-                    logger.error(f"❌ Client oluşturulamadı: {account_name}")
+                    logger.error(f"❌ Tüm proxy'ler başarısız: {account_name}")
                     db_manager.update_request_status(request_id, "Atlandı")
                     return False
                 else:

@@ -154,15 +154,14 @@ class ProxyManager:
         # Debug: Proxy bilgilerini logla
         logger.info(f"🔍 Proxy Debug: {proxy_info}")
         
-        # Telethon proxy formatı
-        from telethon import ProxyHttp
-        
-        return ProxyHttp(
-            host=proxy_info['host'],
-            port=proxy_info['port'],
-            username=proxy_info['username'],
-            password=proxy_info['password']
-        )
+        # Telethon proxy formatı (doğru format)
+        return {
+            'proxy_type': 'http',
+            'addr': proxy_info['host'],
+            'port': proxy_info['port'],
+            'username': proxy_info['username'],
+            'password': proxy_info['password']
+        }
     
     def assign_proxies_to_accounts(self, session_files: List[str]) -> Dict[str, Dict]:
         """Proxy'leri hesaplara atar"""
