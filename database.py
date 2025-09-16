@@ -369,6 +369,11 @@ class DatabaseManager:
     def create_request_pool(self, channel_id: int, session_files: List[str], proxies: List[str]) -> bool:
         """İstek havuzunu oluşturur"""
         try:
+            # Proxy kontrolü - en az 1 proxy olmalı
+            if not proxies or len(proxies) == 0:
+                logger.error("❌ Proxy dosyası boş veya bulunamadı! İstek oluşturulamaz.")
+                return False
+            
             channel = self.get_channel(channel_id)
             if not channel:
                 return False
@@ -384,6 +389,10 @@ class DatabaseManager:
                 logger.warning(f"Kanal için kullanılabilir hesap bulunamadı: {channel['channel_link']}")
                 return False
             
+            # Proxy sayısı kontrolü
+            if len(proxies) < len(available_accounts):
+                logger.warning(f"⚠️ Proxy sayısı ({len(proxies)}) hesap sayısından ({len(available_accounts)}) az! Bazı hesaplar proxy olmadan çalışacak.")
+            
             # İstek sayısını toplam hesap sayısı ile sınırla
             max_requests = len(available_accounts)
             actual_requests = min(channel['total_requests'], max_requests)
@@ -393,6 +402,11 @@ class DatabaseManager:
             
             # Proxy dağıtımı
             account_proxy_map = self.distribute_proxies(available_accounts, proxies)
+            
+            # Proxy olmayan hesapları kontrol et
+            accounts_without_proxy = [acc for acc, proxy in account_proxy_map.items() if not proxy]
+            if accounts_without_proxy:
+                logger.warning(f"⚠️ Proxy atanmayan hesaplar: {accounts_without_proxy}")
             
             # Global istek sıralama sistemi
             start_time = self.get_next_available_time()
