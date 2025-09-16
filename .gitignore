@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Local data and sessions
+Sessions/*
+!Sessions/.gitkeep
+data/
+
+# OS
+.DS_Store
+Thumbs.db

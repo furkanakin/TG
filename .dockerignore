@@ -1,0 +1,15 @@
+# Exclude session files and local artifacts from Docker build context
+Sessions/*
+Sessions/**
+!Sessions/.gitkeep
+
+# Python cache and venv
+__pycache__/
+*.pyc
+.venv/
+
+# Local data
+data/*
+!.dockerignore
+!.gitignore
+README_SYSTEM.md
