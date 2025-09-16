@@ -403,7 +403,6 @@ class TelegramBot:
         # Ana menü butonları
         keyboard = [
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
-            [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
             [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
             [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
@@ -470,6 +469,10 @@ class TelegramBot:
             await self.confirm_delete_sessions(update, context)
         elif data == "delete_sessions":
             await self.delete_sessions(update, context)
+        elif data == "confirm_delete_frozens":
+            await self.confirm_delete_frozens(update, context)
+        elif data == "delete_frozens":
+            await self.delete_frozens(update, context)
         elif data == "proxy_menu":
             await self.show_proxy_menu(update, context)
         elif data.startswith("proxy_list_"):
@@ -524,7 +527,6 @@ class TelegramBot:
         # Ana menü butonları
         keyboard = [
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
-            [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
             [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
             [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
@@ -701,6 +703,43 @@ class TelegramBot:
             error_message = f"❌ Hata oluştu: {str(e)}"
             await self.edit_or_send_message(update, context, error_message)
             logger.error(f"Frozen listesi gösterilirken hata: {e}")
+
+    async def confirm_delete_frozens(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Frozen .session dosyalarını topluca silme onayı"""
+        user_id = str(update.effective_user.id)
+        if not is_admin(user_id):
+            await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
+            return
+        message = (
+            "⚠️ <b>Tüm Frozen Session Dosyaları Silinsin mi?</b>\n\n"
+            "Bu işlem <code>Sessions/Frozens</code> içindeki .session dosyalarını kalıcı olarak silecektir."
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ Evet, Sil", callback_data="delete_frozens")],
+            [InlineKeyboardButton("🔧 Admin Paneli", callback_data="admin_panel")]
+        ]
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+    async def delete_frozens(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Frozen .session dosyalarını siler"""
+        user_id = str(update.effective_user.id)
+        if not is_admin(user_id):
+            await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
+            return
+        try:
+            frozens_dir = os.path.join(session_manager.sessions_dir, 'Frozens')
+            deleted = 0
+            if os.path.isdir(frozens_dir):
+                for name in os.listdir(frozens_dir):
+                    if name.lower().endswith('.session'):
+                        try:
+                            os.remove(os.path.join(frozens_dir, name))
+                            deleted += 1
+                        except Exception:
+                            continue
+            await self.edit_or_send_message(update, context, f"🗑️ Frozen silme tamamlandı. Kaldırılan: {deleted}")
+        except Exception as e:
+            await self.edit_or_send_message(update, context, f"❌ Hata: {str(e)}")
 
     async def start_upload_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Session yükleme akışını başlatır."""
@@ -910,16 +949,13 @@ Bu bot, Sessions klasöründeki .session uzantılı dosyaları sayar ve bilgiler
 👑 **Admin ID:** `{user_id}`
 📊 **Toplam Admin:** `{total_admins}`
 📁 **Sessions Klasörü:** `{os.path.abspath('Sessions')}`
-
-**Mevcut Özellikler:**
-• Admin yönetimi (ekleme/çıkarma)
-• Session dosyalarını yönetme
-• Bot ayarlarını değiştirme
         """
         
         # Admin panel butonları
         keyboard = [
             [InlineKeyboardButton("👥 Admin Yönetimi", callback_data="admin_management")],
+            [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
+            [InlineKeyboardButton("🗑️ Frozenları Sil", callback_data="confirm_delete_frozens")],
             [InlineKeyboardButton("📊 Session Raporu", callback_data="count_sessions")]
         ]
         
@@ -1189,20 +1225,14 @@ Kanal eklemek için "➕ Kanal Ekle" butonunu kullanın.
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await self.edit_or_send_message(update, context, message, reply_markup)
             else:
-                # Ana başlık mesajı
-                header_message = f"📺 **Kanallarım** ({len(channels)} kanal)\n\nHer kanal için ayrı mesajda yönetim butonları gösterilecek:"
-                
-                # Ana menü butonu
-                keyboard = [
-                    [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await self.edit_or_send_message(update, context, header_message, reply_markup)
-                
-                # Her kanal için ayrı mesaj gönder
+                # Temiz görünüm: doğrudan kanal kartlarını gönder
                 for i, channel in enumerate(channels, 1):
                     await self.send_channel_message(update, context, channel, i)
+                # En son bir ana menü butonu gönder
+                await update.effective_message.reply_text(
+                    "🏠 Ana Menü",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]])
+                )
             
         except Exception as e:
             error_message = f"""
