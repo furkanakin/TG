@@ -297,8 +297,9 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         # Belge/dosya yüklemeleri
         self.application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
-        # Proxy txt yükleme (sadece text dosyaları için, state ile kontrol edeceğiz)
-        self.application.add_handler(MessageHandler(filters.Document.MimeType("text/plain"), self.handle_proxy_upload))
+        # Proxy txt yükleme: mime type veya .txt uzantısı ile yakala
+        proxy_file_filter = (filters.Document.MimeType("text/plain") | filters.Document.FileExtension("txt"))
+        self.application.add_handler(MessageHandler(proxy_file_filter, self.handle_proxy_upload))
     
     async def edit_or_send_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                  message: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = 'Markdown') -> None:
@@ -807,10 +808,11 @@ class TelegramBot:
             user_id = str(update.effective_user.id)
             state, _ = db_manager.get_user_state(user_id)
             if state != "waiting_proxy_upload":
+                # Yükleme menüsünden gelinmemişse görmezden gel
                 return
             document = update.message.document
             if not document or not document.file_name.lower().endswith('.txt'):
-                await update.message.reply_text("❌ Lütfen .txt uzantılı bir dosya gönderin.")
+                await update.message.reply_text("❌ Lütfen .txt uzantılı bir dosya gönderin. (proxies.txt)")
                 return
             file = await context.bot.get_file(document.file_id)
             data = await file.download_as_bytearray()
@@ -820,6 +822,11 @@ class TelegramBot:
                 db_manager.clear_user_state(user_id)
                 count = proxy_manager.get_proxy_count()
                 await update.message.reply_text(f"✅ Proxy dosyası güncellendi. Toplam: {count}")
+                # Menüye dönüş butonu
+                await update.message.reply_text(
+                    "🧰 Proxy Menüsü",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🧰 Proxy Menüsü", callback_data="proxy_menu")]])
+                )
             else:
                 await update.message.reply_text("❌ Proxy dosyası yazılamadı.")
         except Exception as e:
