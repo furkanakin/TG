@@ -15,6 +15,7 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 from database import db_manager
 from proxy_manager import proxy_manager
+import socks  # SOCKS5 desteği için
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class TelethonManager:
                 logger.error(f"Session dosyası bulunamadı: {session_path}")
                 return None
             
-            # Proxy ayarları - HTTP ve SOCKS5 desteği
+            # Proxy ayarları - SOCKS5 odaklı sistem
             proxy = None
             if proxy_info:
                 # Önce proxy test et
@@ -45,7 +46,7 @@ class TelethonManager:
                     return None
                 
                 proxy = proxy_manager.get_telethon_proxy(proxy_info)
-                logger.info(f"🌐 Proxy kullanılıyor: {proxy_info['host']}:{proxy_info['port']} ({proxy_info.get('type', 'http')})")
+                logger.info(f"🌐 SOCKS5 Proxy kullanılıyor: {proxy_info['host']}:{proxy_info['port']}")
             
             # Client oluştur
             client = TelegramClient(

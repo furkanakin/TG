@@ -10,6 +10,7 @@ import sqlite3
 import logging
 from typing import List, Dict, Optional, Tuple
 from database import DatabaseManager
+import socks  # SOCKS5 desteği için
 
 logger = logging.getLogger(__name__)
 
@@ -149,10 +150,9 @@ class ProxyManager:
                 if len(parts) >= 5:
                     proxy_info['type'] = parts[4].strip().lower()
             
-            # Tip doğrulaması
-            if proxy_info['type'] not in ['http', 'socks5', 'socks4']:
-                logger.warning(f"Desteklenmeyen proxy tipi: {proxy_info['type']}, http olarak ayarlandı")
-                proxy_info['type'] = 'http'
+            # Tüm proxy'leri SOCKS5 olarak kullan (daha güvenilir)
+            proxy_info['type'] = 'socks5'
+            logger.info(f"🔄 Proxy SOCKS5 olarak ayarlandı: {proxy_info['host']}:{proxy_info['port']}")
             
             # Debug: Parse edilen proxy bilgisini logla
             logger.info(f"🔍 Parse Debug: '{line}' -> {proxy_info}")
@@ -197,30 +197,18 @@ class ProxyManager:
             return False
     
     def get_telethon_proxy(self, proxy_info: Dict) -> Dict:
-        """Telethon için proxy formatına çevirir - HTTP ve SOCKS5 desteği"""
+        """Telethon için proxy formatına çevirir - SOCKS5 odaklı sistem"""
         # Debug: Proxy bilgilerini logla
         logger.info(f"🔍 Proxy Debug: {proxy_info}")
         
-        # Proxy tipini belirle
-        proxy_type = proxy_info.get('type', 'http').lower()
-        
-        # Telethon proxy formatı
-        if proxy_type == 'socks5':
-            return {
-                'proxy_type': 'socks5',
-                'addr': proxy_info['host'],
-                'port': proxy_info['port'],
-                'username': proxy_info['username'],
-                'password': proxy_info['password']
-            }
-        else:  # http veya varsayılan
-            return {
-                'proxy_type': 'http',
-                'addr': proxy_info['host'],
-                'port': proxy_info['port'],
-                'username': proxy_info['username'],
-                'password': proxy_info['password']
-            }
+        # SOCKS5 proxy formatı (Telethon için)
+        return {
+            'proxy_type': socks.SOCKS5,
+            'addr': proxy_info['host'],
+            'port': proxy_info['port'],
+            'username': proxy_info['username'],
+            'password': proxy_info['password']
+        }
     
     def assign_proxies_to_accounts(self, session_files: List[str]) -> Dict[str, Dict]:
         """Proxy'leri hesaplara atar"""
