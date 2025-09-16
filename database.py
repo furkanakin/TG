@@ -325,9 +325,10 @@ class DatabaseManager:
                         'channel_link': row[1],
                         'total_requests': row[2],
                         'duration_minutes': row[3],
-                        'created_at': row[4],
-                        'status': row[5],
-                        'user_id': row[6]
+                        'allow_repeat': row[4],
+                        'created_at': row[5],
+                        'status': row[6],
+                        'user_id': row[7]
                     }
                 return None
                 
@@ -354,9 +355,10 @@ class DatabaseManager:
                         'channel_link': row[1],
                         'total_requests': row[2],
                         'duration_minutes': row[3],
-                        'created_at': row[4],
-                        'status': row[5],
-                        'user_id': row[6]
+                        'allow_repeat': row[4],
+                        'created_at': row[5],
+                        'status': row[6],
+                        'user_id': row[7]
                     })
                 return channels
                 
