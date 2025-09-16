@@ -2019,10 +2019,19 @@ Kanal: `{channel['channel_link']}`
 Toplam: {len(planned_requests)} istek
 
 """
+                proxy_missing_count = 0
                 for i, request in enumerate(planned_requests, 1):
                     scheduled_time = request['scheduled_time'][:19]
                     proxy_text = request.get('proxy_address') or '-'
-                    message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {proxy_text}\n"
+                    if proxy_text == '-':
+                        proxy_missing_count += 1
+                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - ⚠️ PROXY YOK\n"
+                    else:
+                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {proxy_text}\n"
+                
+                # Proxy uyarısı ekle
+                if proxy_missing_count > 0:
+                    message += f"\n⚠️ **Uyarı:** {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
             
             # Yenile ve Geri dön butonları
             keyboard = [
@@ -2058,10 +2067,19 @@ Tüm kanalların planlanan istekleri burada görüntülenir.
 Toplam: {len(global_requests)} planlanmış istek
 
 """
+                proxy_missing_count = 0
                 for i, request in enumerate(global_requests, 1):
                     scheduled_time = request['scheduled_time'][:19]
                     proxy_text = request.get('proxy_address') or '-'
-                    message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - {proxy_text}\n"
+                    if proxy_text == '-':
+                        proxy_missing_count += 1
+                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - ⚠️ PROXY YOK\n"
+                    else:
+                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - {proxy_text}\n"
+                
+                # Proxy uyarısı ekle
+                if proxy_missing_count > 0:
+                    message += f"\n⚠️ **Uyarı:** {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
             
             # Ana menü butonu
             keyboard = [
