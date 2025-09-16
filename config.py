@@ -160,21 +160,30 @@ bot_config = BotConfig()
 
 # Kolay erişim için fonksiyonlar
 def get_bot_api() -> str:
-    # Sabit token varsa onu kullan
+    # 1) Ortam değişkeni öncelikli: BOT_API veya TELEGRAM_BOT_TOKEN
+    env_token = os.environ.get("BOT_API") or os.environ.get("TELEGRAM_BOT_TOKEN")
+    if env_token:
+        return env_token
+    # 2) Sabit token
     if FIXED_BOT_API:
         return FIXED_BOT_API
     return bot_config.get_bot_api()
 
 def get_admin_ids() -> List[str]:
-    # Sabit admin listesi varsa onu kullan
+    # 1) Ortam değişkeni: ADMIN_IDS = "111,222,333"
+    env_admins = os.environ.get("ADMIN_IDS")
+    if env_admins:
+        return [a.strip() for a in env_admins.split(',') if a.strip()]
+    # 2) Sabit liste
     if FIXED_ADMIN_IDS:
         return FIXED_ADMIN_IDS
     return bot_config.get_admin_ids()
 
 def is_admin(user_id: str) -> bool:
-    # Sabit listeye göre kontrol
-    if FIXED_ADMIN_IDS:
-        return str(user_id) in FIXED_ADMIN_IDS
+    # Ortam değişkeni ya da sabit liste varsa ona göre kontrol et
+    current_admins = get_admin_ids()
+    if current_admins:
+        return str(user_id) in current_admins
     return bot_config.is_admin(user_id)
 
 def add_admin(admin_id: str) -> bool:
