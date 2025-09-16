@@ -397,12 +397,6 @@ class TelegramBot:
         # Temizledikten sonra listeden kaldır
         self.chat_id_to_message_ids[chat_id] = []
     
-    async def _cleanup_after_interaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Etkileşim sonrası önceki mesajları temizler"""
-        try:
-            await self._delete_previous_messages(update, context)
-        except Exception as e:
-            logger.debug(f"Mesaj temizleme hatası: {e}")
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Start komutu handler'ı"""
@@ -462,9 +456,6 @@ class TelegramBot:
         """Buton tıklama callback handler'ı"""
         query = update.callback_query
         await query.answer()
-        
-        # Etkileşim sonrası önceki mesajları temizle
-        await self._cleanup_after_interaction(update, context)
         
         data = query.data
         
