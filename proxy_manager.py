@@ -96,27 +96,43 @@ class ProxyManager:
     def parse_proxy_line(self, line: str) -> Optional[Dict]:
         """Proxy satırını parse eder"""
         try:
-            parts = line.split(':')
-            
-            if len(parts) < 2:
-                return None
-            
-            proxy_info = {
-                'host': parts[0].strip(),
-                'port': int(parts[1].strip()),
-                'username': None,
-                'password': None,
-                'type': 'http'  # Varsayılan tip
-            }
-            
-            # Kullanıcı adı ve şifre varsa
-            if len(parts) >= 4:
-                proxy_info['username'] = parts[2].strip()
-                proxy_info['password'] = parts[3].strip()
-            
-            # Proxy tipi belirtilmişse
-            if len(parts) >= 5:
-                proxy_info['type'] = parts[4].strip().lower()
+            # Format: username:password@host:port veya host:port:username:password
+            if '@' in line:
+                # Format: username:password@host:port
+                auth_part, host_part = line.split('@', 1)
+                username, password = auth_part.split(':', 1)
+                host, port = host_part.split(':', 1)
+                
+                proxy_info = {
+                    'host': host.strip(),
+                    'port': int(port.strip()),
+                    'username': username.strip(),
+                    'password': password.strip(),
+                    'type': 'http'
+                }
+            else:
+                # Format: host:port:username:password veya host:port
+                parts = line.split(':')
+                
+                if len(parts) < 2:
+                    return None
+                
+                proxy_info = {
+                    'host': parts[0].strip(),
+                    'port': int(parts[1].strip()),
+                    'username': None,
+                    'password': None,
+                    'type': 'http'
+                }
+                
+                # Kullanıcı adı ve şifre varsa
+                if len(parts) >= 4:
+                    proxy_info['username'] = parts[2].strip()
+                    proxy_info['password'] = parts[3].strip()
+                
+                # Proxy tipi belirtilmişse
+                if len(parts) >= 5:
+                    proxy_info['type'] = parts[4].strip().lower()
             
             return proxy_info
             
