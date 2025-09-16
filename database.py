@@ -410,7 +410,19 @@ class DatabaseManager:
             
             # Global istek sıralama sistemi
             start_time = self.get_next_available_time()
-            min_interval = 5  # Minimum 5 saniye aralık
+            
+            # Kanal süresini al (dakika cinsinden)
+            duration_minutes = channel.get('duration_minutes', 60)  # Varsayılan 60 dakika
+            total_seconds = duration_minutes * 60
+            
+            # Minimum 5 saniye aralık kontrolü
+            min_interval = 5
+            required_time = (actual_requests - 1) * min_interval
+            
+            if required_time > total_seconds:
+                # Gerekli süre verilen süreyi aşıyorsa, süreyi uzat
+                total_seconds = required_time
+                logger.warning(f"⚠️ Gerekli süre ({required_time//60} dk) verilen süreyi ({duration_minutes} dk) aştı. Süre otomatik uzatıldı.")
             
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -418,10 +430,31 @@ class DatabaseManager:
                 # Mevcut istekleri temizle
                 cursor.execute('DELETE FROM request_pool WHERE channel_id = ?', (channel_id,))
                 
-                # Yeni istekleri sıralı olarak oluştur
+                # Random zaman noktaları oluştur
+                time_points = []
                 for i in range(actual_requests):
-                    # Her istek arasında minimum 5 saniye fark
-                    scheduled_time = start_time + timedelta(seconds=i * min_interval)
+                    if i == 0:
+                        # İlk istek hemen başlasın
+                        time_points.append(0)
+                    else:
+                        # Random zaman noktası (minimum 5 saniye aralıkla)
+                        min_time = time_points[-1] + min_interval
+                        max_time = total_seconds
+                        
+                        if min_time >= max_time:
+                            # Yeterli süre yoksa, sıralı ekle
+                            time_points.append(min_time)
+                        else:
+                            # Random zaman seç
+                            random_time = random.randint(min_time, max_time)
+                            time_points.append(random_time)
+                
+                # Zaman noktalarını sırala
+                time_points.sort()
+                
+                # İstekleri oluştur
+                for i, time_offset in enumerate(time_points):
+                    scheduled_time = start_time + timedelta(seconds=time_offset)
                     
                     # Random hesap seç (sadece kullanılabilir hesaplardan)
                     account_name = random.choice(available_accounts)
@@ -434,7 +467,7 @@ class DatabaseManager:
                     ''', (channel_id, account_name, scheduled_time, proxy_address, 'Bekliyor'))
                 
                 conn.commit()
-                logger.info(f"İstek havuzu oluşturuldu: {actual_requests} istek (sıralı, sınırlandırılmış)")
+                logger.info(f"İstek havuzu oluşturuldu: {actual_requests} istek (random dağılım, {duration_minutes} dk içinde)")
                 return True
                 
         except Exception as e:
