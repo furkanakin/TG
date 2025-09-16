@@ -764,7 +764,11 @@ class TelegramBot:
         try:
             user_id = str(update.effective_user.id)
             state, _ = db_manager.get_user_state(user_id)
-            # Yalnızca upload akışında dosya kabul et; aksi halde görmezden gel
+            # Proxy upload akışı mı?
+            if state == "waiting_proxy_upload":
+                await self.handle_proxy_upload(update, context)
+                return
+            # Yalnızca session upload akışında dosya kabul et; aksi halde görmezden gel
             if state != "waiting_upload":
                 return
             document = update.message.document
