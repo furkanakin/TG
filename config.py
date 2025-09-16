@@ -8,6 +8,12 @@ import os
 import json
 from typing import List, Dict, Any
 
+# Sabitlenen kimlik bilgileri: Bu değerler kullanılır, dosya yapılandırmasına ihtiyaç yok
+# DİKKAT: Bu yaklaşım token'ı repoda düz metin olarak saklar.
+# İstenirse daha sonra ortam değişkenlerine taşınabilir.
+FIXED_BOT_API: str = "8477982423:AAE33t98g_1GC9tF8kNCcU79MaP_g8msqZs"
+FIXED_ADMIN_IDS: List[str] = ["1113025571"]
+
 class BotConfig:
     """Telegram Bot konfigürasyon sınıfı"""
     
@@ -154,12 +160,21 @@ bot_config = BotConfig()
 
 # Kolay erişim için fonksiyonlar
 def get_bot_api() -> str:
+    # Sabit token varsa onu kullan
+    if FIXED_BOT_API:
+        return FIXED_BOT_API
     return bot_config.get_bot_api()
 
 def get_admin_ids() -> List[str]:
+    # Sabit admin listesi varsa onu kullan
+    if FIXED_ADMIN_IDS:
+        return FIXED_ADMIN_IDS
     return bot_config.get_admin_ids()
 
 def is_admin(user_id: str) -> bool:
+    # Sabit listeye göre kontrol
+    if FIXED_ADMIN_IDS:
+        return str(user_id) in FIXED_ADMIN_IDS
     return bot_config.is_admin(user_id)
 
 def add_admin(admin_id: str) -> bool:
