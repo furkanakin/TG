@@ -36,10 +36,16 @@ class TelethonManager:
                 logger.error(f"Session dosyası bulunamadı: {session_path}")
                 return None
             
-            # Proxy ayarları
+            # Proxy ayarları - HTTP ve SOCKS5 desteği
             proxy = None
             if proxy_info:
+                # Önce proxy test et
+                if not proxy_manager.test_proxy(proxy_info):
+                    logger.warning(f"⚠️ Proxy test başarısız: {proxy_info['host']}:{proxy_info['port']}")
+                    return None
+                
                 proxy = proxy_manager.get_telethon_proxy(proxy_info)
+                logger.info(f"🌐 Proxy kullanılıyor: {proxy_info['host']}:{proxy_info['port']} ({proxy_info.get('type', 'http')})")
             
             # Client oluştur
             client = TelegramClient(

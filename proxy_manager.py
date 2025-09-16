@@ -94,48 +94,69 @@ class ProxyManager:
         return self.write_raw_lines(lines)
     
     def parse_proxy_line(self, line: str) -> Optional[Dict]:
-        """Proxy satırını parse eder"""
+        """Proxy satırını parse eder. Desteklenen formatlar:
+        - host:port
+        - host:port:username:password
+        - host:port:username:password:type
+        - username:password@host:port
+        - username:password@host:port:type
+        
+        Tip: http, socks5, socks4 (varsayılan: http)
+        """
         try:
-            # Format: username:password@host:port veya host:port:username:password
+            proxy_info = {
+                'host': None,
+                'port': None,
+                'username': None,
+                'password': None,
+                'type': 'http'  # Varsayılan tip
+            }
+
+            # username:password@host:port formatı
             if '@' in line:
-                # Format: username:password@host:port
-                auth_part, host_part = line.split('@', 1)
-                username, password = auth_part.split(':', 1)
-                host, port = host_part.split(':', 1)
+                auth_part, addr_part = line.split('@', 1)
+                if ':' in auth_part:
+                    proxy_info['username'], proxy_info['password'] = auth_part.split(':', 1)
+                else:
+                    logger.warning(f"Geçersiz proxy formatı (kullanıcı adı/şifre eksik): {line}")
+                    return None
                 
-                proxy_info = {
-                    'host': host.strip(),
-                    'port': int(port.strip()),
-                    'username': username.strip(),
-                    'password': password.strip(),
-                    'type': 'http'
-                }
+                # host:port:type formatı
+                addr_parts = addr_part.split(':')
+                if len(addr_parts) < 2:
+                    logger.warning(f"Geçersiz proxy formatı (port eksik): {line}")
+                    return None
+                
+                proxy_info['host'] = addr_parts[0].strip()
+                proxy_info['port'] = int(addr_parts[1].strip())
+                
+                # Tip belirtilmişse
+                if len(addr_parts) >= 3:
+                    proxy_info['type'] = addr_parts[2].strip().lower()
             else:
-                # Format: host:port:username:password veya host:port
+                # host:port veya host:port:username:password:type formatı
                 parts = line.split(':')
-                
                 if len(parts) < 2:
                     return None
                 
-                proxy_info = {
-                    'host': parts[0].strip(),
-                    'port': int(parts[1].strip()),
-                    'username': None,
-                    'password': None,
-                    'type': 'http'
-                }
+                proxy_info['host'] = parts[0].strip()
+                proxy_info['port'] = int(parts[1].strip())
                 
-                # Kullanıcı adı ve şifre varsa
                 if len(parts) >= 4:
                     proxy_info['username'] = parts[2].strip()
                     proxy_info['password'] = parts[3].strip()
                 
-                # Proxy tipi belirtilmişse
                 if len(parts) >= 5:
                     proxy_info['type'] = parts[4].strip().lower()
             
+            # Tip doğrulaması
+            if proxy_info['type'] not in ['http', 'socks5', 'socks4']:
+                logger.warning(f"Desteklenmeyen proxy tipi: {proxy_info['type']}, http olarak ayarlandı")
+                proxy_info['type'] = 'http'
+            
             # Debug: Parse edilen proxy bilgisini logla
             logger.info(f"🔍 Parse Debug: '{line}' -> {proxy_info}")
+            
             return proxy_info
             
         except (ValueError, IndexError) as e:
@@ -149,19 +170,57 @@ class ProxyManager:
         else:
             return f"{proxy_info['host']}:{proxy_info['port']}"
     
+    def test_proxy(self, proxy_info: Dict, timeout: int = 10) -> bool:
+        """Proxy bağlantısını test eder"""
+        try:
+            import socket
+            
+            host = proxy_info['host']
+            port = proxy_info['port']
+            
+            # Socket bağlantısı test et
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result == 0:
+                logger.info(f"✅ Proxy test başarılı: {host}:{port}")
+                return True
+            else:
+                logger.warning(f"❌ Proxy test başarısız: {host}:{port} (kod: {result})")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Proxy test hatası: {e}")
+            return False
+    
     def get_telethon_proxy(self, proxy_info: Dict) -> Dict:
-        """Telethon için proxy formatına çevirir"""
+        """Telethon için proxy formatına çevirir - HTTP ve SOCKS5 desteği"""
         # Debug: Proxy bilgilerini logla
         logger.info(f"🔍 Proxy Debug: {proxy_info}")
         
-        # Telethon proxy formatı (doğru format)
-        return {
-            'proxy_type': 'http',
-            'addr': proxy_info['host'],
-            'port': proxy_info['port'],
-            'username': proxy_info['username'],
-            'password': proxy_info['password']
-        }
+        # Proxy tipini belirle
+        proxy_type = proxy_info.get('type', 'http').lower()
+        
+        # Telethon proxy formatı
+        if proxy_type == 'socks5':
+            return {
+                'proxy_type': 'socks5',
+                'addr': proxy_info['host'],
+                'port': proxy_info['port'],
+                'username': proxy_info['username'],
+                'password': proxy_info['password']
+            }
+        else:  # http veya varsayılan
+            return {
+                'proxy_type': 'http',
+                'addr': proxy_info['host'],
+                'port': proxy_info['port'],
+                'username': proxy_info['username'],
+                'password': proxy_info['password']
+            }
     
     def assign_proxies_to_accounts(self, session_files: List[str]) -> Dict[str, Dict]:
         """Proxy'leri hesaplara atar"""
