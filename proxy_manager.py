@@ -134,6 +134,8 @@ class ProxyManager:
                 if len(parts) >= 5:
                     proxy_info['type'] = parts[4].strip().lower()
             
+            # Debug: Parse edilen proxy bilgisini logla
+            logger.info(f"🔍 Parse Debug: '{line}' -> {proxy_info}")
             return proxy_info
             
         except (ValueError, IndexError) as e:
@@ -149,6 +151,9 @@ class ProxyManager:
     
     def get_telethon_proxy(self, proxy_info: Dict) -> Dict:
         """Telethon için proxy formatına çevirir"""
+        # Debug: Proxy bilgilerini logla
+        logger.info(f"🔍 Proxy Debug: {proxy_info}")
+        
         return {
             'proxy_type': proxy_info['type'],
             'addr': proxy_info['host'],
