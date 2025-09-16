@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   python-app:
     build:
@@ -12,6 +10,15 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+    volumes:
+      - sessions_data:/app/Sessions
+      - db_data:/app/telegram_bot.db
+      - config_data:/app/bot_config.json
+
+volumes:
+  sessions_data:
+  db_data:
+  config_data:
 
 networks:
   app-network:
