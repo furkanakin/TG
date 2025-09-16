@@ -184,6 +184,13 @@ def is_admin(user_id: str) -> bool:
     current_admins = get_admin_ids()
     if current_admins:
         return str(user_id) in current_admins
+    # Veritabanından da kontrol et (bot içinden admin ekleyebilmek için)
+    try:
+        from database import db_manager  # Lazy import, döngüleri önlemek için
+        if db_manager.is_admin_db(str(user_id)):
+            return True
+    except Exception:
+        pass
     return bot_config.is_admin(user_id)
 
 def add_admin(admin_id: str) -> bool:
