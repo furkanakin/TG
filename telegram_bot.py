@@ -340,7 +340,9 @@ class TelegramBot:
                 except Exception:
                     pass
         except Exception as e:
-            logger.error(f"Mesaj gönderilirken hata: {e}")
+            # "Message is not modified" hatasını görmezden gel
+            if "Message is not modified" not in str(e):
+                logger.error(f"Mesaj gönderilirken hata: {e}")
             # Parse mode hatası durumunda HTML veya plain text dene
             try:
                 if update.callback_query:
