@@ -499,6 +499,8 @@ class TelegramBot:
             await self.start_add_admin(update, context)
         elif data == "remove_admin":
             await self.start_remove_admin(update, context)
+        elif data == "show_logs":
+            await self.show_logs(update, context)
         elif data == "refresh_sessions":
             await self.show_session_count(update, context)
         elif data == "add_channel":
@@ -967,7 +969,8 @@ Bu bot, Sessions klasöründeki .session uzantılı dosyaları sayar ve bilgiler
             [InlineKeyboardButton("👥 Admin Yönetimi", callback_data="admin_management")],
             [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
             [InlineKeyboardButton("🗑️ Frozenları Sil", callback_data="confirm_delete_frozens")],
-            [InlineKeyboardButton("📊 Session Raporu", callback_data="count_sessions")]
+            [InlineKeyboardButton("📊 Session Raporu", callback_data="count_sessions")],
+            [InlineKeyboardButton("📋 Logları Gör", callback_data="show_logs")]
         ]
         
         # Navigasyon butonlarını ekle
@@ -2216,6 +2219,53 @@ Başlatmak için aşağıdaki butona basın:
         except Exception as e:
             logger.error(f"Tekrar seçimi işlenirken hata: {e}")
             await self.edit_or_send_message(update, context, f"❌ Hata oluştu: {str(e)}")
+    
+    def get_recent_logs(self, lines: int = 30) -> str:
+        """Son N satır log'u döndürür"""
+        try:
+            import subprocess
+            import os
+            
+            # Docker container'da mı çalışıyor kontrol et
+            if os.path.exists('/.dockerenv'):
+                # Docker container'da - log dosyası yok, konsol çıktısı kullan
+                return "Docker container'da çalışıyor. Logları Coolify panelinden görüntüleyin.\n\nSon 30 log satırı için SSH ile VPS'e bağlanıp şu komutu çalıştırın:\n\ndocker logs --tail 30 $(docker ps --format '{{.Names}}' | grep python-app)"
+            else:
+                # Yerel - log dosyası varsa oku
+                log_file = "bot.log"
+                if os.path.exists(log_file):
+                    with open(log_file, 'r', encoding='utf-8') as f:
+                        all_lines = f.readlines()
+                        recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+                        return ''.join(recent_lines)
+                else:
+                    return "Log dosyası bulunamadı."
+                    
+        except Exception as e:
+            return f"Log okuma hatası: {e}"
+    
+    async def show_logs(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Son logları gösterir"""
+        try:
+            logs = self.get_recent_logs(30)
+            
+            # Log çok uzunsa böl
+            if len(logs) > 4000:
+                logs = logs[-4000:] + "\n... (Son 30 satır)"
+            
+            message = f"📋 **Son 30 Log Satırı:**\n\n```\n{logs}\n```"
+            
+            # Geri butonu
+            keyboard = [
+                [InlineKeyboardButton("⬅️ Geri", callback_data="admin_panel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await self.edit_or_send_message(update, context, message, reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Log gösterimi hatası: {e}")
+            await update.callback_query.answer("❌ Log gösterilemedi", show_alert=True)
     
     def run(self) -> None:
         """Botu çalıştırır"""
