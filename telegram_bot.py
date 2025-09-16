@@ -223,6 +223,29 @@ class SessionManager:
                         saved += 1
         return saved
 
+    def delete_all_sessions(self) -> int:
+        """Frozens haricindeki tüm .session dosyalarını siler ve kaç dosya silindiğini döndürür."""
+        try:
+            self.ensure_sessions_dir()
+            pattern = os.path.join(self.sessions_dir, "*.session")
+            files = glob.glob(pattern)
+            frozens_dir = os.path.join(self.sessions_dir, "Frozens")
+            frozen_names = set(os.listdir(frozens_dir)) if os.path.isdir(frozens_dir) else set()
+            deleted = 0
+            for path in files:
+                name = os.path.basename(path)
+                if name in frozen_names:
+                    continue
+                try:
+                    os.remove(path)
+                    deleted += 1
+                except Exception:
+                    continue
+            return deleted
+        except Exception as e:
+            logger.error(f"Session dosyaları silinirken hata: {e}")
+            return 0
+
 # Global session manager
 session_manager = SessionManager()
 
@@ -440,6 +463,10 @@ class TelegramBot:
             await self.show_frozen_list(update, context)
         elif data == "upload_sessions":
             await self.start_upload_sessions(update, context)
+        elif data == "confirm_delete_sessions":
+            await self.confirm_delete_sessions(update, context)
+        elif data == "delete_sessions":
+            await self.delete_sessions(update, context)
         elif data.startswith("session_list_"):
             page = int(data.split("_")[-1])
             await self.show_session_list(update, context, page)
@@ -572,6 +599,10 @@ class TelegramBot:
                     if nav_row:
                         keyboard.append(nav_row)
                 
+                # Yönetim butonları
+                admin_id = str(update.effective_user.id)
+                if is_admin(admin_id):
+                    keyboard.append([InlineKeyboardButton("🗑️ Tümünü Sil", callback_data="confirm_delete_sessions")])
                 # Ana menü butonu
                 keyboard.append([InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")])
                 
@@ -583,6 +614,36 @@ class TelegramBot:
             error_message = f"❌ Hata oluştu: {str(e)}"
             await self.edit_or_send_message(update, context, error_message)
             logger.error(f"Session listesi gösterilirken hata: {e}")
+
+    async def confirm_delete_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Tüm aktif session dosyalarını silme onayı."""
+        user_id = str(update.effective_user.id)
+        if not is_admin(user_id):
+            await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
+            return
+        message = (
+            "⚠️ <b>Tüm Aktif Session Dosyaları Silinsin mi?</b>\n\n"
+            "Bu işlem Frozens klasörü dışındaki <code>.session</code> dosyalarını kalıcı olarak silecektir."
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ Evet, Sil", callback_data="delete_sessions")],
+            [InlineKeyboardButton("⬅️ Geri", callback_data="list_sessions")]
+        ]
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+    async def delete_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Tüm aktif session dosyalarını siler."""
+        user_id = str(update.effective_user.id)
+        if not is_admin(user_id):
+            await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
+            return
+        deleted = session_manager.delete_all_sessions()
+        message = f"🗑️ Silme tamamlandı. Kaldırılan dosya: {deleted}"
+        keyboard = [
+            [InlineKeyboardButton("📋 Listeyi Göster", callback_data="list_sessions")],
+            [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+        ]
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard))
     
     async def show_frozen_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 1) -> None:
         """Frozen hesapların listesini gösterir (sayfalı)"""
