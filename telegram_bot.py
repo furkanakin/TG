@@ -6,6 +6,8 @@ Sessions klasöründeki .session dosyalarını sayar ve kullanıcıya gösterir
 
 import os
 import glob
+import zipfile
+import tempfile
 import sqlite3
 import logging
 from typing import List, Optional
@@ -173,6 +175,54 @@ class SessionManager:
                 "files": []
             }
 
+    def _sanitize_filename(self, file_name: str) -> str:
+        """Gelen dosya adını güvenli bir ada dönüştürür (.session uzantısını korur)."""
+        base = os.path.basename(file_name)
+        # uzantı kontrolü
+        if not base.endswith('.session'):
+            base = f"{base}.session" if '.session' not in base else base
+        # izin verilmeyen karakterleri temizle
+        safe = ''.join(ch for ch in base if ch.isalnum() or ch in ('-', '_', '.', '+'))
+        if not safe.endswith('.session'):
+            safe += '.session'
+        return safe
+
+    def save_session_bytes(self, file_name: str, file_bytes: bytes) -> str:
+        """Verilen içerikle Sessions klasörüne .session kaydeder ve dosya adını döndürür."""
+        self.ensure_sessions_dir()
+        safe_name = self._sanitize_filename(file_name)
+        target_path = os.path.join(self.sessions_dir, safe_name)
+        # Aynı isim varsa benzersizleştir
+        if os.path.exists(target_path):
+            name, ext = os.path.splitext(safe_name)
+            i = 1
+            while os.path.exists(os.path.join(self.sessions_dir, f"{name}_{i}{ext}")):
+                i += 1
+            safe_name = f"{name}_{i}{ext}"
+            target_path = os.path.join(self.sessions_dir, safe_name)
+        with open(target_path, 'wb') as f:
+            f.write(file_bytes)
+        return safe_name
+
+    def import_sessions_from_zip(self, zip_bytes: bytes) -> int:
+        """ZIP içinden .session dosyalarını çıkarıp kaydeder, kaç tane kaydedildiğini döndürür."""
+        saved = 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_zip = os.path.join(tmpdir, 'upload.zip')
+            with open(tmp_zip, 'wb') as f:
+                f.write(zip_bytes)
+            with zipfile.ZipFile(tmp_zip, 'r') as zf:
+                for info in zf.infolist():
+                    if info.is_dir():
+                        continue
+                    if not info.filename.lower().endswith('.session'):
+                        continue
+                    with zf.open(info) as src:
+                        data = src.read()
+                        self.save_session_bytes(os.path.basename(info.filename), data)
+                        saved += 1
+        return saved
+
 # Global session manager
 session_manager = SessionManager()
 
@@ -222,6 +272,8 @@ class TelegramBot:
         # Mesaj handler'ı (form doldurma için)
         from telegram.ext import MessageHandler, filters
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Belge/dosya yüklemeleri
+        self.application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
     
     async def edit_or_send_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                  message: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = 'Markdown') -> None:
@@ -327,6 +379,7 @@ class TelegramBot:
         keyboard = [
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
             [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
+            [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
             [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
@@ -385,6 +438,8 @@ class TelegramBot:
             await self.show_session_list(update, context)
         elif data == "list_frozen":
             await self.show_frozen_list(update, context)
+        elif data == "upload_sessions":
+            await self.start_upload_sessions(update, context)
         elif data.startswith("session_list_"):
             page = int(data.split("_")[-1])
             await self.show_session_list(update, context, page)
@@ -431,6 +486,7 @@ class TelegramBot:
         keyboard = [
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
             [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
+            [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
             [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
@@ -571,6 +627,66 @@ class TelegramBot:
             error_message = f"❌ Hata oluştu: {str(e)}"
             await self.edit_or_send_message(update, context, error_message)
             logger.error(f"Frozen listesi gösterilirken hata: {e}")
+
+    async def start_upload_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Session yükleme akışını başlatır."""
+        user_id = str(update.effective_user.id)
+        # Kullanıcı durumunu ayarla
+        db_manager.set_user_state(user_id, "waiting_upload", {})
+        message = (
+            "⬆️ <b>Session Yükleme</b>\n\n"
+            "• Bir veya birden fazla <code>.session</code> dosyasını bu sohbete gönderin.\n"
+            "• Alternatif olarak <b>.zip</b> arşivi olarak yükleyebilirsiniz (içinden .session dosyaları çıkarılır).\n\n"
+            "Gönderim tamamlanınca <b>Ana Menü</b>’ye dönebilir veya yüklemeye devam edebilirsiniz."
+        )
+        keyboard = [
+            [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await self.edit_or_send_message(update, context, message, reply_markup, parse_mode='HTML')
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Gönderilen dosyaları işler: .session veya .zip"""
+        try:
+            user_id = str(update.effective_user.id)
+            state, _ = db_manager.get_user_state(user_id)
+            # Yalnızca upload akışında dosya kabul et; aksi halde görmezden gel
+            if state != "waiting_upload":
+                return
+            document = update.message.document
+            if not document:
+                return
+            file = await context.bot.get_file(document.file_id)
+            data = await file.download_as_bytearray()
+            filename = (document.file_name or 'upload').lower()
+            saved_count = 0
+            saved_names = []
+            if filename.endswith('.zip'):
+                saved_count = session_manager.import_sessions_from_zip(bytes(data))
+            elif filename.endswith('.session'):
+                saved_name = session_manager.save_session_bytes(filename, bytes(data))
+                saved_count = 1
+                saved_names = [saved_name]
+            else:
+                await update.message.reply_text("❌ Sadece .session veya .zip dosyaları kabul edilir.")
+                return
+            # Yükleme bilgisi
+            info = session_manager.get_session_info()
+            text = (
+                "✅ Yükleme tamamlandı!\n\n"
+                f"Kaydedilen dosya sayısı: {saved_count}\n"
+                f"Toplam aktif hesap: {info['total_count']}\n"
+            )
+            if saved_names:
+                text += "\n" + "\n".join(f"• {name}" for name in saved_names)
+            keyboard = [
+                [InlineKeyboardButton("📊 Güncel Sayı", callback_data="count_sessions")],
+                [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+            ]
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as e:
+            logger.error(f"Belge işleme hatası: {e}")
+            await update.message.reply_text(f"❌ Hata: {str(e)}")
     
     async def show_help_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Yardım bilgilerini gösterir"""
