@@ -1,0 +1,27 @@
+{
+    "bot_api": "8477982423:AAE33t98g_1GC9tF8kNCcU79MaP_g8msqZs",
+    "admin_ids": [
+        "1113025571"
+    ],
+    "webhook_url": "",
+    "webhook_port": 8443,
+    "debug_mode": true,
+    "max_file_size": 20,
+    "allowed_file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "mp4",
+        "mp3",
+        "pdf",
+        "txt",
+        "doc",
+        "docx"
+    ],
+    "bot_settings": {
+        "parse_mode": "HTML",
+        "disable_web_page_preview": true,
+        "disable_notification": false
+    }
+}
