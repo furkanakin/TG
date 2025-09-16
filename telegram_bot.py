@@ -297,6 +297,8 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         # Belge/dosya yüklemeleri
         self.application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
+        # Proxy txt yükleme (sadece text dosyaları için, state ile kontrol edeceğiz)
+        self.application.add_handler(MessageHandler(filters.Document.MimeType("text/plain"), self.handle_proxy_upload))
     
     async def edit_or_send_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                  message: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = 'Markdown') -> None:
@@ -403,6 +405,7 @@ class TelegramBot:
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
             [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
             [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
+            [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
             [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
@@ -467,6 +470,15 @@ class TelegramBot:
             await self.confirm_delete_sessions(update, context)
         elif data == "delete_sessions":
             await self.delete_sessions(update, context)
+        elif data == "proxy_menu":
+            await self.show_proxy_menu(update, context)
+        elif data.startswith("proxy_list_"):
+            page = int(data.split("_")[-1])
+            await self.show_proxy_list(update, context, page)
+        elif data == "proxy_upload":
+            await self.start_proxy_upload(update, context)
+        elif data == "proxy_delete_mode":
+            await self.start_proxy_delete(update, context)
         elif data.startswith("session_list_"):
             page = int(data.split("_")[-1])
             await self.show_session_list(update, context, page)
@@ -495,17 +507,6 @@ class TelegramBot:
             await self.start_requests_callback(update, context)
         elif data == "cancel_channel":
             await self.cancel_channel_add(update, context)
-        elif data == "proxy_settings":
-            await self.show_proxy_settings(update, context)
-        elif data == "proxy_list":
-            await self.show_proxy_list(update, context, 1)
-        elif data.startswith("proxy_list_"):
-            page = int(data.split("_")[-1])
-            await self.show_proxy_list(update, context, page)
-        elif data == "proxy_upload":
-            await self.start_proxy_upload(update, context)
-        elif data == "proxy_delete_mode":
-            await self.start_proxy_delete_mode(update, context)
         elif data == "repeat_yes":
             await self.handle_repeat_choice_callback(update, context, "yes")
         elif data == "repeat_no":
@@ -525,7 +526,7 @@ class TelegramBot:
             [InlineKeyboardButton("📊 Toplam Hesap Sayısı", callback_data="count_sessions")],
             [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
             [InlineKeyboardButton("⬆️ Session Yükle", callback_data="upload_sessions")],
-            [InlineKeyboardButton("🛠️ Proxy Ayarları", callback_data="proxy_settings")],
+            [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
             [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
@@ -760,6 +761,31 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Belge işleme hatası: {e}")
             await update.message.reply_text(f"❌ Hata: {str(e)}")
+
+    async def handle_proxy_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """proxies.txt yükleme handler'ı"""
+        try:
+            user_id = str(update.effective_user.id)
+            state, _ = db_manager.get_user_state(user_id)
+            if state != "waiting_proxy_upload":
+                return
+            document = update.message.document
+            if not document or not document.file_name.lower().endswith('.txt'):
+                await update.message.reply_text("❌ Lütfen .txt uzantılı bir dosya gönderin.")
+                return
+            file = await context.bot.get_file(document.file_id)
+            data = await file.download_as_bytearray()
+            text = bytes(data).decode('utf-8', errors='ignore')
+            lines = [ln.rstrip('\r') for ln in text.split('\n')]
+            if proxy_manager.write_raw_lines(lines):
+                db_manager.clear_user_state(user_id)
+                count = proxy_manager.get_proxy_count()
+                await update.message.reply_text(f"✅ Proxy dosyası güncellendi. Toplam: {count}")
+            else:
+                await update.message.reply_text("❌ Proxy dosyası yazılamadı.")
+        except Exception as e:
+            logger.error(f"Proxy upload hatası: {e}")
+            await update.message.reply_text(f"❌ Hata: {str(e)}")
     
     async def show_help_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Yardım bilgilerini gösterir"""
@@ -790,40 +816,41 @@ Bu bot, Sessions klasöründeki .session uzantılı dosyaları sayar ve bilgiler
         
         await self.edit_or_send_message(update, context, help_message, reply_markup)
     
-    async def show_proxy_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Proxy ayarları ana ekranı"""
+    async def show_proxy_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Proxy ayarları ana menüsü"""
         user_id = str(update.effective_user.id)
         if not is_admin(user_id):
             await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
             return
+        message = "🧰 <b>Proxy Ayarları</b>\n\nAşağıdan seçim yapın."
         keyboard = [
-            [InlineKeyboardButton("📃 Proxyleri Gör", callback_data="proxy_list")],
+            [InlineKeyboardButton("📄 Proxyleri Gör", callback_data="proxy_list_1")],
             [InlineKeyboardButton("⬆️ Proxy Yükle", callback_data="proxy_upload")],
             [InlineKeyboardButton("🗑️ Proxy Sil", callback_data="proxy_delete_mode")],
             [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
         ]
-        await self.edit_or_send_message(update, context, "🛠️ Proxy Ayarları", InlineKeyboardMarkup(keyboard))
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     async def show_proxy_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 1) -> None:
-        from proxy_manager import proxy_manager
+        """Proxyleri 30'arlı sayfalar halinde listeler"""
         user_id = str(update.effective_user.id)
         if not is_admin(user_id):
             await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
             return
-        raw_lines = proxy_manager.read_raw_lines()
-        if not raw_lines:
-            keyboard = [[InlineKeyboardButton("⬆️ Proxy Yükle", callback_data="proxy_upload")], [InlineKeyboardButton("⬅️ Geri", callback_data="proxy_settings")]]
-            await self.edit_or_send_message(update, context, "📃 Kayıtlı proxy yok.", InlineKeyboardMarkup(keyboard))
+        lines = proxy_manager.get_raw_lines()
+        if not lines:
+            await self.edit_or_send_message(update, context, "📄 Proxy dosyası boş veya bulunamadı.")
             return
-        items_per_page = 30
-        total_pages = (len(raw_lines) + items_per_page - 1) // items_per_page
+        per_page = 30
+        total_pages = (len(lines) + per_page - 1) // per_page
         page = max(1, min(page, total_pages))
-        start_idx = (page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        page_lines = raw_lines[start_idx:end_idx]
-        msg = f"📃 Proxy Listesi (Sayfa {page}/{total_pages})\n\n"
-        for i, line in enumerate(page_lines, start_idx + 1):
-            msg += f"`{i}. {line}`\n"
+        start = (page - 1) * per_page
+        end = start + per_page
+        page_lines = lines[start:end]
+        message = f"📄 <b>Proxy Listesi</b> (Sayfa {page}/{total_pages})\n\n"
+        for i, line in enumerate(page_lines, start + 1):
+            message += f"`{i}. {line}`\n"
+        # Nav + geri
         keyboard = []
         nav = []
         if page > 1:
@@ -832,37 +859,38 @@ Bu bot, Sessions klasöründeki .session uzantılı dosyaları sayar ve bilgiler
             nav.append(InlineKeyboardButton("Sonraki ➡️", callback_data=f"proxy_list_{page+1}"))
         if nav:
             keyboard.append(nav)
-        keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="proxy_settings")])
-        await self.edit_or_send_message(update, context, msg, InlineKeyboardMarkup(keyboard))
+        keyboard.append([InlineKeyboardButton("🧰 Proxy Menüsü", callback_data="proxy_menu")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await self.edit_or_send_message(update, context, message, reply_markup, parse_mode='HTML')
 
     async def start_proxy_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Proxy yükleme modunu başlatır"""
         user_id = str(update.effective_user.id)
         if not is_admin(user_id):
             await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
             return
-        # Kullanıcıyı yükleme moduna al
         db_manager.set_user_state(user_id, "waiting_proxy_upload", {})
-        msg = (
-            "⬆️ <b>Proxy Yükleme</b>\n\n"
-            "Bir <code>proxies.txt</code> dosyası gönderin. İçindeki satırlar mevcutlara eklenecektir."
+        message = (
+            "⬆️ <b>Proxy Yükle</b>\n\n"
+            "Lütfen <code>proxies.txt</code> dosyasını gönderin. Mevcut dosya üzerine yazılır."
         )
-        keyboard = [[InlineKeyboardButton("⬅️ Geri", callback_data="proxy_settings")]]
-        await self.edit_or_send_message(update, context, msg, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        keyboard = [[InlineKeyboardButton("🧰 Proxy Menüsü", callback_data="proxy_menu")]]
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-    async def start_proxy_delete_mode(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def start_proxy_delete(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Proxy silme modunu başlatır (ID ile veya satırı yapıştırarak)"""
         user_id = str(update.effective_user.id)
         if not is_admin(user_id):
             await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
             return
         db_manager.set_user_state(user_id, "waiting_proxy_delete", {})
-        msg = (
-            "🗑️ <b>Proxy Silme Modu</b>\n\n"
-            "Aşağıdaki biçimlerden birini mesaj olarak gönderin:\n"
-            "• Silinecek proxy satır numarası (örn: 12)\n"
-            "• Tam proxy satırı (örn: 1.2.3.4:8080 veya kullanıcı:şifre@host:port)"
+        message = (
+            "🗑️ <b>Proxy Silme</b>\n\n"
+            "Silmek için ya ID numarasını gönderin (örn: 12) ya da \n"
+            "silmek istediğiniz proxy satırını aynen yapıştırın."
         )
-        keyboard = [[InlineKeyboardButton("⬅️ Geri", callback_data="proxy_settings")]]
-        await self.edit_or_send_message(update, context, msg, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        keyboard = [[InlineKeyboardButton("🧰 Proxy Menüsü", callback_data="proxy_menu")]]
+        await self.edit_or_send_message(update, context, message, InlineKeyboardMarkup(keyboard), parse_mode='HTML')
     
     async def show_admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Admin panelini gösterir"""
@@ -1449,20 +1477,6 @@ Ana menüden "📺 Kanallarım" ile ilerlemeyi takip edebilirsiniz.
                 await self.handle_admin_id(update, context, message_text)
             elif state == "waiting_remove_admin_id":
                 await self.handle_remove_admin_id(update, context, message_text)
-            elif state == "waiting_proxy_delete":
-                # Sayı ise index ile, değilse satır metniyle silmeyi dene
-                deleted = False
-                from proxy_manager import proxy_manager
-                if message_text.isdigit():
-                    deleted = proxy_manager.delete_by_index(int(message_text))
-                else:
-                    deleted = proxy_manager.delete_by_line(message_text)
-                if deleted:
-                    await update.message.reply_text("✅ Proxy silindi.")
-                else:
-                    await update.message.reply_text("❌ Eşleşen proxy bulunamadı.")
-                # Moddan çıkmadan kal, tekrar silmeye izin ver
-                return
             else:
                 # Bilinmeyen durum, temizle
                 db_manager.clear_user_state(user_id)

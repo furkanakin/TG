@@ -16,15 +16,7 @@ logger = logging.getLogger(__name__)
 class ProxyManager:
     """Proxy yönetim sınıfı"""
     
-    def __init__(self, proxy_file: str = None):
-        # Varsayılanı kalıcı data klasörüne taşı
-        if not proxy_file:
-            data_dir = os.path.join(os.getcwd(), 'data')
-            try:
-                os.makedirs(data_dir, exist_ok=True)
-            except Exception:
-                pass
-            proxy_file = os.path.join(data_dir, 'proxies.txt')
+    def __init__(self, proxy_file: str = "proxies.txt"):
         self.proxy_file = proxy_file
         self.db_manager = DatabaseManager()
         self.proxies = self.load_proxies()
@@ -60,59 +52,46 @@ class ProxyManager:
             logger.error(f"Proxy dosyası yüklenemedi: {e}")
             return []
 
-    def read_raw_lines(self) -> List[str]:
-        """Ham proxy satırlarını döndürür (yorum ve boş satırlar hariç tutulmaz)."""
+    def get_raw_lines(self) -> List[str]:
+        """proxies.txt içeriğini ham satırlar halinde döndürür (yorumlar/boşlar hariç değil)."""
         if not os.path.exists(self.proxy_file):
             return []
         try:
             with open(self.proxy_file, 'r', encoding='utf-8') as f:
                 return [line.rstrip('\n') for line in f]
-        except Exception:
+        except Exception as e:
+            logger.error(f"Proxy dosyası okunamadı: {e}")
             return []
 
-    def write_lines(self, lines: List[str]) -> None:
-        """Proxy dosyasını verilen satırlarla yazar ve belleği yeniden yükler."""
-        data_dir = os.path.dirname(self.proxy_file)
+    def write_raw_lines(self, lines: List[str]) -> bool:
+        """Ham satırları proxies.txt dosyasına yazar ve cache'i yeniler."""
         try:
-            os.makedirs(data_dir, exist_ok=True)
-        except Exception:
-            pass
-        with open(self.proxy_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines).rstrip('\n'))
-            f.write('\n')
-        self.reload_proxies()
+            with open(self.proxy_file, 'w', encoding='utf-8') as f:
+                for line in lines:
+                    f.write(f"{line}\n")
+            self.reload_proxies()
+            return True
+        except Exception as e:
+            logger.error(f"Proxy dosyası yazılamadı: {e}")
+            return False
 
-    def delete_by_index(self, index_1_based: int) -> bool:
-        """1 tabanlı index'e göre bir satırı siler."""
-        lines = self.read_raw_lines()
+    def delete_proxy_by_index(self, index_1_based: int) -> bool:
+        """1'den başlayan index ile bir satırı siler."""
+        lines = self.get_raw_lines()
         if index_1_based < 1 or index_1_based > len(lines):
             return False
         del lines[index_1_based - 1]
-        self.write_lines(lines)
-        return True
+        return self.write_raw_lines(lines)
 
-    def delete_by_line(self, line_text: str) -> bool:
-        """Tam satır eşleşmesine göre siler."""
-        lines = self.read_raw_lines()
-        new_lines = [l for l in lines if l.strip() != line_text.strip()]
-        if len(new_lines) == len(lines):
-            return False
-        self.write_lines(new_lines)
-        return True
-
-    def import_from_text_bytes(self, file_bytes: bytes) -> int:
-        """Tek bir .txt içindeki proxy satırlarını ekler (varsa son halini yazar)."""
+    def delete_proxy_by_line(self, line_text: str) -> bool:
+        """Tam satır eşleşmesi ile siler."""
+        lines = self.get_raw_lines()
         try:
-            content = file_bytes.decode('utf-8', errors='ignore')
-            new_lines = [l.strip() for l in content.splitlines() if l.strip()]
-            # Mevcut satırları al ve birleştir (set ile benzersiz)
-            lines = self.read_raw_lines()
-            merged = lines + [l for l in new_lines if l not in lines]
-            self.write_lines(merged)
-            return len(new_lines)
-        except Exception as e:
-            logger.error(f"Proxy txt içe aktarma hatası: {e}")
-            return 0
+            idx = lines.index(line_text)
+        except ValueError:
+            return False
+        del lines[idx]
+        return self.write_raw_lines(lines)
     
     def parse_proxy_line(self, line: str) -> Optional[Dict]:
         """Proxy satırını parse eder"""
