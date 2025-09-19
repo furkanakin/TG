@@ -500,16 +500,23 @@ class DatabaseManager:
             return datetime.now()
     
     def distribute_proxies(self, session_files: List[str], proxies: List[str]) -> Dict[str, str]:
-        """Proxy'leri hesaplara dağıtır"""
+        """Proxy'leri hesaplara dağıtır - her hesaba kalıcı proxy ata"""
         account_proxy_map = {}
         
         if not proxies:
             return account_proxy_map
         
-        # Proxy'leri döngüsel olarak dağıt
+        # Her hesaba kalıcı olarak bir proxy ata
         for i, session_file in enumerate(session_files):
-            proxy_index = i % len(proxies)
-            account_proxy_map[session_file] = proxies[proxy_index]
+            if i < len(proxies):
+                # Proxy varsa ata
+                proxy_address = proxies[i]
+                account_proxy_map[session_file] = proxy_address
+                logger.info(f"🔗 Proxy atandı: {session_file} -> {proxy_address}")
+            else:
+                # Proxy yoksa boş bırak
+                account_proxy_map[session_file] = ""
+                logger.warning(f"⚠️ Proxy atanamadı: {session_file}")
         
         return account_proxy_map
     

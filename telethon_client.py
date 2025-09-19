@@ -16,6 +16,7 @@ from telethon.tl.functions.messages import ImportChatInviteRequest
 from database import db_manager
 from proxy_manager import proxy_manager
 import socks  # SOCKS5 desteği için
+import shutil  # Invalid session taşıma için
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,13 @@ class TelethonManager:
         self.api_hash = api_hash or "b18441a1ff607e10a989891a5462e627"  # Global API Hash
         self.clients = {}  # session_file -> client mapping
         self.sessions_dir = "Sessions"
+        
+        # Invalid klasörü oluştur
+        self.invalid_dir = os.path.join(self.sessions_dir, "Invalid")
+        os.makedirs(self.invalid_dir, exist_ok=True)
+        
+        # Proxy cache - her hesap için çalışan proxy
+        self.account_proxy_cache = {}
         
     async def create_client(self, session_file: str, proxy_info: Dict = None) -> Optional[TelegramClient]:
         """Session dosyası için client oluşturur"""
@@ -40,11 +48,6 @@ class TelethonManager:
             # Proxy ayarları - SOCKS5 odaklı sistem
             proxy = None
             if proxy_info:
-                # Önce proxy test et
-                if not proxy_manager.test_proxy(proxy_info):
-                    logger.warning(f"⚠️ Proxy test başarısız: {proxy_info['host']}:{proxy_info['port']}")
-                    return None
-                
                 proxy = proxy_manager.get_telethon_proxy(proxy_info)
                 logger.info(f"🌐 SOCKS5 Proxy kullanılıyor: {proxy_info['host']}:{proxy_info['port']}")
             
@@ -61,6 +64,12 @@ class TelethonManager:
             
             if not await client.is_user_authorized():
                 logger.warning(f"Session yetkilendirilmemiş: {session_file}")
+                
+                # Invalid klasörüne taşı
+                invalid_path = os.path.join(self.invalid_dir, session_file)
+                shutil.move(session_path, invalid_path)
+                logger.info(f"📁 Geçersiz session taşındı: {session_file} -> Invalid/")
+                
                 await client.disconnect()
                 return None
             
@@ -138,37 +147,54 @@ class TelethonManager:
             if not client:
                 logger.info(f"📱 Yeni client oluşturuluyor: {account_name}")
                 
-                # Proxy bilgisini al
-                proxy_info = None
-                if proxy_address:
-                    proxy_info = proxy_manager.parse_proxy_string(proxy_address)
-                    logger.info(f"🌐 Proxy kullanılıyor: {proxy_address}")
+                # Önce cache'den çalışan proxy'yi dene
+                cached_proxy = self.account_proxy_cache.get(account_name)
+                if cached_proxy:
+                    logger.info(f"🔄 Cache'den proxy kullanılıyor: {account_name}")
+                    client = await self.create_client(account_name, cached_proxy)
+                    if client:
+                        logger.info(f"✅ Cache proxy başarılı: {account_name}")
+                    else:
+                        # Cache proxy başarısız, cache'i temizle
+                        del self.account_proxy_cache[account_name]
+                        logger.warning(f"⚠️ Cache proxy başarısız, temizlendi: {account_name}")
                 
-                # Yeni client oluştur - birden fazla proxy dene
-                client = await self.create_client(account_name, proxy_info)
                 if not client:
-                    logger.warning(f"⚠️ İlk proxy başarısız, alternatif proxy'ler deneniyor: {account_name}")
+                    # İlk proxy'yi dene
+                    initial_proxy_info = None
+                    if proxy_address:
+                        initial_proxy_info = proxy_manager.parse_proxy_string(proxy_address)
+                        logger.info(f"🌐 İlk proxy kullanılıyor: {proxy_address}")
                     
-                    # Birden fazla alternatif proxy dene (maksimum 5 tane)
-                    max_attempts = 5
-                    for attempt in range(max_attempts):
-                        proxy_info = proxy_manager.get_random_proxy()
-                        if proxy_info:
-                            logger.info(f"🔄 Alternatif proxy {attempt + 1}/{max_attempts} deneniyor: {proxy_manager.get_proxy_string(proxy_info)}")
-                            client = await self.create_client(account_name, proxy_info)
-                            if client:
-                                logger.info(f"✅ Alternatif proxy {attempt + 1} başarılı: {account_name}")
-                                break
+                    client = await self.create_client(account_name, initial_proxy_info)
+                    
+                    if client:
+                        # İlk proxy başarılı, cache'e kaydet
+                        self.account_proxy_cache[account_name] = initial_proxy_info
+                        logger.info(f"✅ İlk proxy başarılı, cache'e kaydedildi: {account_name}")
+                    else:
+                        # Alternatif proxy'leri dene
+                        logger.warning(f"⚠️ İlk proxy başarısız, alternatif proxy'ler deneniyor: {account_name}")
+                        
+                        for i in range(1, 6):  # 1'den 5'e kadar deneme
+                            logger.info(f"🔄 Alternatif proxy {i}/5 deneniyor...")
+                            await asyncio.sleep(5)  # Her deneme arasında 5 saniye bekle
+                            
+                            alt_proxy_info = proxy_manager.get_random_proxy()
+                            if alt_proxy_info:
+                                logger.info(f"🔄 Alternatif proxy {i}/5 deneniyor: {proxy_manager.get_proxy_string(alt_proxy_info)}")
+                                client = await self.create_client(account_name, alt_proxy_info)
+                                if client:
+                                    # Alternatif proxy başarılı, cache'e kaydet
+                                    self.account_proxy_cache[account_name] = alt_proxy_info
+                                    logger.info(f"✅ Alternatif proxy {i} başarılı, cache'e kaydedildi: {account_name}")
+                                    break  # Başarılı olursa döngüden çık
                             else:
-                                # 5 saniye bekle sonraki proxy'ye geç
-                                logger.warning(f"⏳ Proxy {attempt + 1} başarısız, 5 saniye bekleniyor...")
-                                await asyncio.sleep(5)
-                        else:
-                            logger.error(f"❌ Daha fazla proxy bulunamadı: {account_name}")
-                            break
+                                logger.warning("⚠️ Alternatif proxy bulunamadı.")
+                                break  # Alternatif proxy yoksa döngüden çık
                 
                 if not client:
-                    logger.error(f"❌ Tüm proxy'ler başarısız: {account_name}")
+                    logger.error(f"❌ Client oluşturulamadı: {account_name}")
                     db_manager.update_request_status(request_id, "Atlandı")
                     return False
                 else:
