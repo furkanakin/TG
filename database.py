@@ -367,7 +367,7 @@ class DatabaseManager:
             return []
     
     def create_request_pool(self, channel_id: int, session_files: List[str], proxies: List[str]) -> bool:
-        """İstek havuzunu oluşturur"""
+        """Global rastgele zaman dağılımı ile istek havuzunu oluşturur"""
         try:
             # Proxy kontrolü - en az 1 proxy olmalı
             if not proxies or len(proxies) == 0:
@@ -408,11 +408,11 @@ class DatabaseManager:
             if accounts_without_proxy:
                 logger.warning(f"⚠️ Proxy atanmayan hesaplar: {accounts_without_proxy}")
             
-            # Global istek sıralama sistemi
-            start_time = self.get_next_available_time()
+            # GLOBAL ZAMAN DAĞILIMI SİSTEMİ
+            start_time = self.get_global_start_time()
             
             # Kanal süresini al (dakika cinsinden)
-            duration_minutes = channel.get('duration_minutes', 60)  # Varsayılan 60 dakika
+            duration_minutes = channel.get('duration_minutes', 60)
             total_seconds = duration_minutes * 60
             
             # Minimum 5 saniye aralık kontrolü
@@ -430,27 +430,8 @@ class DatabaseManager:
                 # Mevcut istekleri temizle
                 cursor.execute('DELETE FROM request_pool WHERE channel_id = ?', (channel_id,))
                 
-                # Random zaman noktaları oluştur
-                time_points = []
-                for i in range(actual_requests):
-                    if i == 0:
-                        # İlk istek hemen başlasın
-                        time_points.append(0)
-                    else:
-                        # Random zaman noktası (minimum 5 saniye aralıkla)
-                        min_time = time_points[-1] + min_interval
-                        max_time = total_seconds
-                        
-                        if min_time >= max_time:
-                            # Yeterli süre yoksa, sıralı ekle
-                            time_points.append(min_time)
-                        else:
-                            # Random zaman seç
-                            random_time = random.randint(min_time, max_time)
-                            time_points.append(random_time)
-                
-                # Zaman noktalarını sırala
-                time_points.sort()
+                # GLOBAL RASTGELE ZAMAN NOKTALARI OLUŞTUR
+                time_points = self.generate_global_random_times(actual_requests, total_seconds, min_interval)
                 
                 # İstekleri oluştur
                 for i, time_offset in enumerate(time_points):
@@ -467,7 +448,7 @@ class DatabaseManager:
                     ''', (channel_id, account_name, scheduled_time, proxy_address, 'Bekliyor'))
                 
                 conn.commit()
-                logger.info(f"İstek havuzu oluşturuldu: {actual_requests} istek (random dağılım, {duration_minutes} dk içinde)")
+                logger.info(f"🎯 Global rastgele istek havuzu oluşturuldu: {actual_requests} istek ({duration_minutes} dk içinde)")
                 return True
                 
         except Exception as e:
@@ -843,6 +824,137 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Session istatistikleri alınamadı: {e}")
             return {'active': 0, 'invalid': 0, 'frozen': 0, 'total': 0, 'total_size_mb': 0}
+
+    def get_global_start_time(self) -> datetime:
+        """Global havuzdaki tüm istekleri dikkate alarak başlangıç zamanını döndürür"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Tüm bekleyen istekleri al
+                cursor.execute('''
+                    SELECT scheduled_time FROM request_pool 
+                    WHERE status = 'Bekliyor'
+                    ORDER BY scheduled_time DESC
+                    LIMIT 1
+                ''')
+                
+                result = cursor.fetchone()
+                if result and result[0]:
+                    # Son istekten 5 saniye sonra
+                    last_time = datetime.fromisoformat(result[0])
+                    return last_time + timedelta(seconds=5)
+                else:
+                    # İlk istek, şimdi başla
+                    return datetime.now()
+                    
+        except Exception as e:
+            logger.error(f"Global başlangıç zamanı alınamadı: {e}")
+            return datetime.now()
+
+    def generate_global_random_times(self, request_count: int, total_seconds: int, min_interval: int = 5) -> List[int]:
+        """Global havuz için tamamen rastgele zaman noktaları oluşturur"""
+        try:
+            # Tüm mevcut istekleri al
+            existing_times = self.get_all_scheduled_times()
+            
+            # Yeni zaman noktaları oluştur
+            time_points = []
+            
+            for i in range(request_count):
+                if i == 0:
+                    # İlk istek hemen başlasın
+                    time_points.append(0)
+                else:
+                    # Rastgele zaman noktası oluştur
+                    random_time = self.find_random_time_slot(
+                        existing_times + time_points, 
+                        total_seconds, 
+                        min_interval
+                    )
+                    time_points.append(random_time)
+            
+            # Zaman noktalarını sırala
+            time_points.sort()
+            
+            logger.info(f"🎲 {len(time_points)} rastgele zaman noktası oluşturuldu")
+            return time_points
+            
+        except Exception as e:
+            logger.error(f"Rastgele zaman noktaları oluşturulamadı: {e}")
+            # Fallback: sıralı zaman noktaları
+            return [i * min_interval for i in range(request_count)]
+
+    def get_all_scheduled_times(self) -> List[int]:
+        """Tüm planlanan isteklerin zaman noktalarını döndürür (saniye cinsinden)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT scheduled_time FROM request_pool 
+                    WHERE status = 'Bekliyor'
+                    ORDER BY scheduled_time ASC
+                ''')
+                
+                times = []
+                for row in cursor.fetchall():
+                    scheduled_time = datetime.fromisoformat(row[0])
+                    # Şimdiki zamana göre saniye cinsinden offset
+                    time_offset = int((scheduled_time - datetime.now()).total_seconds())
+                    if time_offset >= 0:  # Gelecekteki istekler
+                        times.append(time_offset)
+                
+                return times
+                
+        except Exception as e:
+            logger.error(f"Planlanan zamanlar alınamadı: {e}")
+            return []
+
+    def find_random_time_slot(self, existing_times: List[int], total_seconds: int, min_interval: int = 5) -> int:
+        """Mevcut zamanlarla çakışmayan rastgele bir zaman noktası bulur"""
+        try:
+            # Mevcut zamanları sırala
+            existing_times.sort()
+            
+            # Uygun zaman aralıklarını bul
+            available_slots = []
+            
+            # Başlangıçtan ilk isteğe kadar
+            if not existing_times or existing_times[0] >= min_interval:
+                available_slots.append((0, existing_times[0] - min_interval if existing_times else total_seconds))
+            
+            # İstekler arasındaki boşluklar
+            for i in range(len(existing_times) - 1):
+                gap_start = existing_times[i] + min_interval
+                gap_end = existing_times[i + 1] - min_interval
+                
+                if gap_end > gap_start:
+                    available_slots.append((gap_start, gap_end))
+            
+            # Son istekten sonraki alan
+            if existing_times:
+                last_time = existing_times[-1]
+                if total_seconds > last_time + min_interval:
+                    available_slots.append((last_time + min_interval, total_seconds))
+            
+            if not available_slots:
+                # Uygun slot yoksa, son istekten sonra ekle
+                return (existing_times[-1] + min_interval) if existing_times else 0
+            
+            # Rastgele bir slot seç
+            slot = random.choice(available_slots)
+            
+            # Slot içinde rastgele zaman seç
+            if slot[1] - slot[0] <= 0:
+                return slot[0]
+            
+            return random.randint(slot[0], slot[1])
+            
+        except Exception as e:
+            logger.error(f"Rastgele zaman slotu bulunamadı: {e}")
+            # Fallback: sıralı ekleme
+            return (existing_times[-1] + min_interval) if existing_times else 0
 
 # Global veritabanı instance'ı
 db_manager = DatabaseManager()
