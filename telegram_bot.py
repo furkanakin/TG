@@ -1281,13 +1281,13 @@ Lütfen tekrar deneyin veya Ana Menü'ye dönün.
             stats = db_manager.get_request_stats(channel['id'])
             
             message = f"""
-📺 **Kanal #{channel_number}**
+📺 <b>Kanal #{channel_number}</b>
 
-{status_emoji} **{channel['channel_link']}**
+{status_emoji} <b>{channel['channel_link']}</b>
 
-📊 **İstek:** {channel['total_requests']} | ⏱️ **Süre:** {channel['duration_minutes']} dk
-📈 **Durum:** {stats['Gönderildi']} gönderildi, {stats['Bekliyor']} bekliyor, {stats['Atlandı']} atlandı
-📅 **Tarih:** {channel['created_at'][:16]}
+📊 <b>İstek:</b> {channel['total_requests']} | ⏱️ <b>Süre:</b> {channel['duration_minutes']} dk
+📈 <b>Durum:</b> {stats['Gönderildi']} gönderildi, {stats['Bekliyor']} bekliyor, {stats['Atlandı']} atlandı
+📅 <b>Tarih:</b> {channel['created_at'][:16]}
             """
             
             # Kanal yönetim butonları
@@ -1327,8 +1327,8 @@ Lütfen tekrar deneyin veya Ana Menü'ye dönün.
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Yeni mesaj gönder (edit değil)
-            await update.effective_message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            # Yeni mesaj gönder (edit değil) - HTML kullanarak Markdown parsing hatalarını önle
+            await update.effective_message.reply_text(message, reply_markup=reply_markup, parse_mode='HTML')
             
         except Exception as e:
             logger.error(f"Kanal mesajı gönderilirken hata: {e}")
@@ -1748,7 +1748,7 @@ Sorun devam ederse:
 
 {action_text}
 
-📺 **Kanal:** `{channel_link}`
+📺 <b>Kanal:</b> <code>{channel_link}</code>
 📊 **İstek Sayısı:** `{total_requests}`
 ⏱️ **Süre:** `{duration}` dakika
 
@@ -2011,17 +2011,17 @@ Kanal ve tüm istekleri veritabanından tamamen kaldırıldı.
             
             if not planned_requests:
                 message = f"""
-📋 **Planlanan İstekler**
+📋 <b>Planlanan İstekler</b>
 
-Kanal: `{channel['channel_link']}`
+Kanal: <code>{channel['channel_link']}</code>
 
 ⚠️ Henüz planlanmış istek bulunmuyor.
                 """
             else:
                 message = f"""
-📋 **Planlanan İstekler**
+📋 <b>Planlanan İstekler</b>
 
-Kanal: `{channel['channel_link']}`
+Kanal: <code>{channel['channel_link']}</code>
 Toplam: {len(planned_requests)} istek
 
 """
@@ -2031,13 +2031,13 @@ Toplam: {len(planned_requests)} istek
                     proxy_text = request.get('proxy_address') or '-'
                     if proxy_text == '-':
                         proxy_missing_count += 1
-                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - ⚠️ PROXY YOK\n"
+                        message += f"<code>{i}.</code> {scheduled_time} - {request['phone_number']} - ⚠️ PROXY YOK\n"
                     else:
-                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {proxy_text}\n"
+                        message += f"<code>{i}.</code> {scheduled_time} - {request['phone_number']} - {proxy_text}\n"
                 
                 # Proxy uyarısı ekle
                 if proxy_missing_count > 0:
-                    message += f"\n⚠️ **Uyarı:** {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
+                    message += f"\n⚠️ <b>Uyarı:</b> {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
             
             # Yenile ve Geri dön butonları
             keyboard = [
@@ -2060,7 +2060,7 @@ Toplam: {len(planned_requests)} istek
             
             if not global_requests:
                 message = """
-🌐 **Global Havuz**
+🌐 <b>Global Havuz</b>
 
 ⚠️ Henüz planlanmış istek bulunmuyor.
 
@@ -2068,7 +2068,7 @@ Tüm kanalların planlanan istekleri burada görüntülenir.
                 """
             else:
                 message = f"""
-🌐 **Global Havuz**
+🌐 <b>Global Havuz</b>
 
 Toplam: {len(global_requests)} planlanmış istek
 
@@ -2079,13 +2079,13 @@ Toplam: {len(global_requests)} planlanmış istek
                     proxy_text = request.get('proxy_address') or '-'
                     if proxy_text == '-':
                         proxy_missing_count += 1
-                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - ⚠️ PROXY YOK\n"
+                        message += f"<code>{i}.</code> {scheduled_time} - {request['phone_number']} - {request['channel_link']} - ⚠️ PROXY YOK\n"
                     else:
-                        message += f"`{i}.` {scheduled_time} - {request['phone_number']} - {request['channel_link']} - {proxy_text}\n"
+                        message += f"<code>{i}.</code> {scheduled_time} - {request['phone_number']} - {request['channel_link']} - {proxy_text}\n"
                 
                 # Proxy uyarısı ekle
                 if proxy_missing_count > 0:
-                    message += f"\n⚠️ **Uyarı:** {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
+                    message += f"\n⚠️ <b>Uyarı:</b> {proxy_missing_count} istek proxy olmadan çalışacak!\nProxy ayarlarından proxy yükleyin."
             
             # Ana menü butonu
             keyboard = [
@@ -2146,7 +2146,7 @@ Sorun devam ederse:
 
 {action_text}
 
-📺 **Kanal:** `{channel_link}`
+📺 <b>Kanal:</b> <code>{channel_link}</code>
 📊 **İstek Sayısı:** `{total_requests}`
 ⏱️ **Süre:** `{duration}` dakika
 🔄 **Tekrar İstek:** `{repeat_text}`
@@ -2220,7 +2220,7 @@ Sorun devam ederse:
 
 {action_text}
 
-📺 **Kanal:** `{channel_link}`
+📺 <b>Kanal:</b> <code>{channel_link}</code>
 📊 **İstek Sayısı:** `{total_requests}`
 ⏱️ **Süre:** `{duration}` dakika
 🔄 **Tekrar İstek:** `{repeat_text}`
