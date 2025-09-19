@@ -556,18 +556,19 @@ class TelegramBot:
     async def show_session_count(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Session sayısını gösterir"""
         try:
-            session_info = session_manager.get_session_info()
-            frozen_info = session_manager.get_frozen_info()
+            # Database'den session istatistiklerini al
+            session_stats = db_manager.get_session_stats()
             
             message = f"""
 📊 **Hesap Bilgileri**
 
-🟢 **Aktif Hesaplar:** `{session_info['total_count']}`
-🔴 **Frozen Hesaplar:** `{frozen_info['total_count']}`
-📄 **Toplam Hesaplar:** `{session_info['total_count'] + frozen_info['total_count']}`
-💾 **Toplam Boyut:** `{session_info['total_size_mb'] + frozen_info['total_size_mb']} MB`
+🟢 **Aktif Hesaplar:** `{session_stats['active']}`
+🔴 **Frozen Hesaplar:** `{session_stats['frozen']}`
+🟡 **Invalid Hesaplar:** `{session_stats['invalid']}`
+📄 **Toplam Hesaplar:** `{session_stats['total']}`
+💾 **Toplam Boyut:** `{session_stats['total_size_mb']} MB`
 
-{'✅ Hesaplar bulundu!' if (session_info['total_count'] + frozen_info['total_count']) > 0 else '⚠️ Hiç hesap bulunamadı!'}
+{'✅ Hesaplar bulundu!' if session_stats['total'] > 0 else '⚠️ Hiç hesap bulunamadı!'}
             """
             
             # Butonları oluştur

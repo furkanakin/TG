@@ -51,12 +51,15 @@ class TelethonManager:
                 proxy = proxy_manager.get_telethon_proxy(proxy_info)
                 logger.info(f"🌐 SOCKS5 Proxy kullanılıyor: {proxy_info['host']}:{proxy_info['port']}")
             
-            # Client oluştur
+            # Client oluştur - timeout sürelerini kısalt
             client = TelegramClient(
                 session_path,
                 self.api_id,
                 self.api_hash,
-                proxy=proxy
+                proxy=proxy,
+                connection_retries=2,  # 6'dan 2'ye düşür
+                timeout=5,  # 10'dan 5'e düşür
+                retry_delay=1  # Retry arası bekleme
             )
             
             # Bağlantıyı test et
@@ -65,12 +68,17 @@ class TelethonManager:
             if not await client.is_user_authorized():
                 logger.warning(f"Session yetkilendirilmemiş: {session_file}")
                 
-                # Invalid klasörüne taşı
-                invalid_path = os.path.join(self.invalid_dir, session_file)
-                shutil.move(session_path, invalid_path)
-                logger.info(f"📁 Geçersiz session taşındı: {session_file} -> Invalid/")
-                
+                # Önce client'ı kapat
                 await client.disconnect()
+                
+                # Sonra session'ı taşı
+                try:
+                    invalid_path = os.path.join(self.invalid_dir, session_file)
+                    shutil.move(session_path, invalid_path)
+                    logger.info(f"📁 Geçersiz session taşındı: {session_file} -> Invalid/")
+                except Exception as move_error:
+                    logger.error(f"Session taşınamadı ({session_file}): {move_error}")
+                
                 return None
             
             logger.info(f"Client oluşturuldu: {session_file}")
@@ -178,7 +186,7 @@ class TelethonManager:
                         
                         for i in range(1, 6):  # 1'den 5'e kadar deneme
                             logger.info(f"🔄 Alternatif proxy {i}/5 deneniyor...")
-                            await asyncio.sleep(5)  # Her deneme arasında 5 saniye bekle
+                            await asyncio.sleep(1)  # Her deneme arasında 1 saniye bekle
                             
                             alt_proxy_info = proxy_manager.get_random_proxy()
                             if alt_proxy_info:

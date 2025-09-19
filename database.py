@@ -787,6 +787,62 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Kullanılabilir hesaplar alınamadı: {e}")
             return session_files
+    
+    def get_session_stats(self) -> Dict:
+        """Session dosyalarının istatistiklerini döndürür"""
+        try:
+            sessions_dir = "Sessions"
+            invalid_dir = os.path.join(sessions_dir, "Invalid")
+            frozens_dir = os.path.join(sessions_dir, "Frozens")
+            
+            # Aktif session'lar
+            active_sessions = []
+            if os.path.exists(sessions_dir):
+                for file in os.listdir(sessions_dir):
+                    if file.endswith('.session'):
+                        active_sessions.append(file)
+            
+            # Invalid session'lar
+            invalid_sessions = []
+            if os.path.exists(invalid_dir):
+                for file in os.listdir(invalid_dir):
+                    if file.endswith('.session'):
+                        invalid_sessions.append(file)
+            
+            # Frozen session'lar
+            frozen_sessions = []
+            if os.path.exists(frozens_dir):
+                for file in os.listdir(frozens_dir):
+                    if file.endswith('.session'):
+                        frozen_sessions.append(file)
+            
+            # Toplam boyut hesapla
+            total_size = 0
+            for session_file in active_sessions + invalid_sessions + frozen_sessions:
+                try:
+                    if session_file in active_sessions:
+                        file_path = os.path.join(sessions_dir, session_file)
+                    elif session_file in invalid_sessions:
+                        file_path = os.path.join(invalid_dir, session_file)
+                    else:
+                        file_path = os.path.join(frozens_dir, session_file)
+                    
+                    if os.path.exists(file_path):
+                        total_size += os.path.getsize(file_path)
+                except Exception:
+                    pass
+            
+            return {
+                'active': len(active_sessions),
+                'invalid': len(invalid_sessions),
+                'frozen': len(frozen_sessions),
+                'total': len(active_sessions) + len(invalid_sessions) + len(frozen_sessions),
+                'total_size_mb': round(total_size / (1024 * 1024), 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"Session istatistikleri alınamadı: {e}")
+            return {'active': 0, 'invalid': 0, 'frozen': 0, 'total': 0, 'total_size_mb': 0}
 
 # Global veritabanı instance'ı
 db_manager = DatabaseManager()
