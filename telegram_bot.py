@@ -413,7 +413,8 @@ class TelegramBot:
             [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
-            [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
+            [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")],
+            [InlineKeyboardButton("🗑️ Chat Temizle", callback_data="clear_chat")]
         ]
         
         if is_user_admin:
@@ -524,6 +525,24 @@ class TelegramBot:
             await self.handle_repeat_choice_callback(update, context, "no")
         elif data.startswith("channel_"):
             await self.handle_channel_action(update, context, data)
+        elif data == "clear_chat":
+            await self.clear_chat(update, context)
+        elif data == "admin_list_sessions":
+            await self.show_admin_session_list(update, context)
+        elif data == "list_invalid":
+            await self.show_invalid_list(update, context)
+        elif data.startswith("admin_session_list_"):
+            page = int(data.split("_")[-1])
+            await self.show_admin_session_list(update, context, page)
+        elif data.startswith("invalid_list_"):
+            page = int(data.split("_")[-1])
+            await self.show_invalid_list(update, context, page)
+        elif data == "download_active_sessions":
+            await self.download_sessions(update, context, "active")
+        elif data == "download_frozen_sessions":
+            await self.download_sessions(update, context, "frozen")
+        elif data == "download_invalid_sessions":
+            await self.download_sessions(update, context, "invalid")
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Ana menüyü gösterir"""
@@ -539,7 +558,8 @@ class TelegramBot:
             [InlineKeyboardButton("🧰 Proxy Ayarları", callback_data="proxy_menu")],
             [InlineKeyboardButton("➕ Kanal Ekle", callback_data="add_channel")],
             [InlineKeyboardButton("📺 Kanallarım", callback_data="my_channels")],
-            [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")]
+            [InlineKeyboardButton("🌐 Global Havuz", callback_data="global_pool")],
+            [InlineKeyboardButton("🗑️ Chat Temizle", callback_data="clear_chat")]
         ]
         
         if is_user_admin:
@@ -552,6 +572,116 @@ class TelegramBot:
     async def go_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Geri döner (şimdilik ana menüye)"""
         await self.show_main_menu(update, context)
+    
+    async def clear_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Chat'i temizler (kendisi hariç tüm mesajları siler)"""
+        try:
+            chat_id = update.effective_chat.id
+            
+            # Bot'un gönderdiği tüm mesajları sil
+            message_ids = self.chat_id_to_message_ids.get(chat_id, [])
+            
+            if message_ids:
+                for msg_id in message_ids:
+                    try:
+                        await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    except Exception:
+                        # Mesaj silinemezse devam et
+                        continue
+                
+                # Listeyi temizle
+                self.chat_id_to_message_ids[chat_id] = []
+                
+                # Başarı mesajı gönder
+                message = "✅ Chat temizlendi!"
+                keyboard = [
+                    [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                sent = await update.effective_message.reply_text(message, reply_markup=reply_markup)
+                
+                # Bu mesajı da takip listesine ekle
+                self.chat_id_to_message_ids[chat_id] = [sent.message_id]
+            else:
+                # Silinecek mesaj yok
+                message = "ℹ️ Temizlenecek mesaj bulunamadı."
+                keyboard = [
+                    [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.effective_message.reply_text(message, reply_markup=reply_markup)
+                
+        except Exception as e:
+            logger.error(f"Chat temizleme hatası: {e}")
+            await update.effective_message.reply_text("❌ Chat temizlenirken hata oluştu!")
+    
+    async def download_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE, session_type: str) -> None:
+        """Session dosyalarını ZIP olarak indirir"""
+        try:
+            import zipfile
+            import io
+            
+            # Session dosyalarını topla
+            session_files = []
+            zip_name = ""
+            
+            if session_type == "active":
+                session_files = session_manager.get_session_files()
+                zip_name = "active_sessions.zip"
+            elif session_type == "frozen":
+                session_files = session_manager.get_frozen_files()
+                zip_name = "frozen_sessions.zip"
+            elif session_type == "invalid":
+                invalid_dir = os.path.join("Sessions", "Invalid")
+                if os.path.exists(invalid_dir):
+                    pattern = os.path.join(invalid_dir, "*.session")
+                    invalid_files = glob.glob(pattern)
+                    session_files = [os.path.basename(f) for f in invalid_files]
+                zip_name = "invalid_sessions.zip"
+            
+            if not session_files:
+                await update.effective_message.reply_text(f"❌ {session_type.title()} session dosyası bulunamadı!")
+                return
+            
+            # ZIP dosyası oluştur
+            zip_buffer = io.BytesIO()
+            
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for session_file in session_files:
+                    if session_type == "active":
+                        file_path = os.path.join("Sessions", session_file)
+                    elif session_type == "frozen":
+                        file_path = os.path.join("Sessions", "Frozens", session_file)
+                    elif session_type == "invalid":
+                        file_path = os.path.join("Sessions", "Invalid", session_file)
+                    
+                    if os.path.exists(file_path):
+                        zip_file.write(file_path, session_file)
+            
+            zip_buffer.seek(0)
+            
+            # Dosyayı gönder
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=zip_buffer.getvalue(),
+                filename=zip_name,
+                caption=f"📥 {session_type.title()} Session Dosyaları ({len(session_files)} adet)"
+            )
+            
+            # Başarı mesajı
+            message = f"✅ {len(session_files)} adet {session_type} session dosyası ZIP olarak gönderildi!"
+            keyboard = [
+                [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.effective_message.reply_text(message, reply_markup=reply_markup)
+            
+        except Exception as e:
+            logger.error(f"Session indirme hatası: {e}")
+            await update.effective_message.reply_text(f"❌ Dosya indirilirken hata oluştu: {str(e)}")
     
     async def show_session_count(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Session sayısını gösterir"""
@@ -575,7 +705,8 @@ class TelegramBot:
             keyboard = [
                 [InlineKeyboardButton("🔄 Yenile", callback_data="refresh_sessions")],
                 [InlineKeyboardButton("📋 Aktif Liste", callback_data="list_sessions")],
-                [InlineKeyboardButton("❄️ Frozen Liste", callback_data="list_frozen")]
+                [InlineKeyboardButton("❄️ Frozen Liste", callback_data="list_frozen")],
+                [InlineKeyboardButton("🟡 Invalid Liste", callback_data="list_invalid")]
             ]
             
             # Navigasyon butonlarını ekle
@@ -623,11 +754,8 @@ class TelegramBot:
                     if nav_row:
                         keyboard.append(nav_row)
                 
-                # Yönetim butonları
-                admin_id = str(update.effective_user.id)
-                if is_admin(admin_id):
-                    keyboard.append([InlineKeyboardButton("🗑️ Tümünü Sil", callback_data="confirm_delete_sessions")])
-                # Ana menü butonu
+                # İndirme butonu
+                keyboard.append([InlineKeyboardButton("📥 Dosyaları İndir", callback_data="download_active_sessions")])
                 keyboard.append([InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")])
                 
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -638,6 +766,110 @@ class TelegramBot:
             error_message = f"❌ Hata oluştu: {str(e)}"
             await self.edit_or_send_message(update, context, error_message)
             logger.error(f"Session listesi gösterilirken hata: {e}")
+
+    async def show_admin_session_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 1) -> None:
+        """Admin için session dosyalarının listesini gösterir (sayfalı) - Tümünü Sil butonu ile"""
+        try:
+            user_id = str(update.effective_user.id)
+            if not is_admin(user_id):
+                await self.edit_or_send_message(update, context, "❌ Bu özelliği kullanma yetkiniz yok!")
+                return
+                
+            session_info = session_manager.get_session_info()
+            files = session_info['files']
+            
+            if not files:
+                message = "📋 **Aktif Hesaplar (Admin)**\n\n⚠️ Hiç aktif hesap bulunamadı!"
+                keyboard = self.create_navigation_buttons("admin_session_list")
+            else:
+                # Sayfalama
+                items_per_page = 20
+                total_pages = (len(files) + items_per_page - 1) // items_per_page
+                start_idx = (page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                page_files = files[start_idx:end_idx]
+                
+                message = f"📋 **Aktif Hesaplar (Admin)** (Sayfa {page}/{total_pages})\n\n"
+                for i, file_name in enumerate(page_files, start_idx + 1):
+                    message += f"`{i}. {file_name}`\n"
+                
+                # Sayfa navigasyon butonları
+                keyboard = []
+                if total_pages > 1:
+                    nav_row = []
+                    if page > 1:
+                        nav_row.append(InlineKeyboardButton("⬅️ Önceki", callback_data=f"admin_session_list_{page-1}"))
+                    if page < total_pages:
+                        nav_row.append(InlineKeyboardButton("Sonraki ➡️", callback_data=f"admin_session_list_{page+1}"))
+                    if nav_row:
+                        keyboard.append(nav_row)
+                
+                # Admin yönetim butonları
+                keyboard.append([InlineKeyboardButton("🗑️ Tümünü Sil", callback_data="confirm_delete_sessions")])
+                keyboard.append([InlineKeyboardButton("📥 Dosyaları İndir", callback_data="download_active_sessions")])
+                keyboard.append([InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")])
+                
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await self.edit_or_send_message(update, context, message, reply_markup)
+                
+        except Exception as e:
+            error_message = f"❌ Hata oluştu: {str(e)}"
+            await self.edit_or_send_message(update, context, error_message)
+            logger.error(f"Admin session listesi gösterilirken hata: {e}")
+
+    async def show_invalid_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 1) -> None:
+        """Invalid hesapların listesini gösterir (sayfalı)"""
+        try:
+            # Invalid session'ları al
+            invalid_dir = os.path.join("Sessions", "Invalid")
+            if not os.path.exists(invalid_dir):
+                message = "🟡 **Invalid Hesaplar**\n\n⚠️ Invalid klasörü bulunamadı!"
+                keyboard = self.create_navigation_buttons("invalid_list")
+            else:
+                # Invalid session dosyalarını listele
+                pattern = os.path.join(invalid_dir, "*.session")
+                invalid_files = glob.glob(pattern)
+                file_names = [os.path.basename(f) for f in invalid_files]
+                
+                if not file_names:
+                    message = "🟡 **Invalid Hesaplar**\n\n⚠️ Hiç invalid hesap bulunamadı!"
+                    keyboard = self.create_navigation_buttons("invalid_list")
+                else:
+                    # Sayfalama
+                    items_per_page = 20
+                    total_pages = (len(file_names) + items_per_page - 1) // items_per_page
+                    start_idx = (page - 1) * items_per_page
+                    end_idx = start_idx + items_per_page
+                    page_files = file_names[start_idx:end_idx]
+                    
+                    message = f"🟡 **Invalid Hesaplar** (Sayfa {page}/{total_pages})\n\n"
+                    for i, file_name in enumerate(page_files, start_idx + 1):
+                        message += f"`{i}. {file_name}`\n"
+                    
+                    # Sayfa navigasyon butonları
+                    keyboard = []
+                    if total_pages > 1:
+                        nav_row = []
+                        if page > 1:
+                            nav_row.append(InlineKeyboardButton("⬅️ Önceki", callback_data=f"invalid_list_{page-1}"))
+                        if page < total_pages:
+                            nav_row.append(InlineKeyboardButton("Sonraki ➡️", callback_data=f"invalid_list_{page+1}"))
+                        if nav_row:
+                            keyboard.append(nav_row)
+                    
+                    # İndirme butonu
+                    keyboard.append([InlineKeyboardButton("📥 Dosyaları İndir", callback_data="download_invalid_sessions")])
+                    keyboard.append([InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")])
+                
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await self.edit_or_send_message(update, context, message, reply_markup)
+                
+        except Exception as e:
+            error_message = f"❌ Hata oluştu: {str(e)}"
+            await self.edit_or_send_message(update, context, error_message)
+            logger.error(f"Invalid listesi gösterilirken hata: {e}")
 
     async def confirm_delete_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Tüm aktif session dosyalarını silme onayı."""
@@ -701,7 +933,8 @@ class TelegramBot:
                     if nav_row:
                         keyboard.append(nav_row)
                 
-                # Ana menü butonu
+                # İndirme butonu
+                keyboard.append([InlineKeyboardButton("📥 Dosyaları İndir", callback_data="download_frozen_sessions")])
                 keyboard.append([InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")])
                 
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -973,7 +1206,7 @@ Bu bot, Sessions klasöründeki .session uzantılı dosyaları sayar ve bilgiler
         # Admin panel butonları
         keyboard = [
             [InlineKeyboardButton("👥 Admin Yönetimi", callback_data="admin_management")],
-            [InlineKeyboardButton("📋 Session Listesi", callback_data="list_sessions")],
+            [InlineKeyboardButton("📋 Session Listesi", callback_data="admin_list_sessions")],
             [InlineKeyboardButton("🗑️ Frozenları Sil", callback_data="confirm_delete_frozens")],
             [InlineKeyboardButton("📊 Session Raporu", callback_data="count_sessions")],
             [InlineKeyboardButton("📋 Logları Gör", callback_data="show_logs")]
@@ -1248,11 +1481,6 @@ Kanal eklemek için "➕ Kanal Ekle" butonunu kullanın.
                 # Temiz görünüm: doğrudan kanal kartlarını gönder
                 for i, channel in enumerate(channels, 1):
                     await self.send_channel_message(update, context, channel, i)
-                # En son bir ana menü butonu gönder
-                await update.effective_message.reply_text(
-                    "🏠 Ana Menü",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]])
-                )
             
         except Exception as e:
             error_message = f"""
