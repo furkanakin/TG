@@ -577,9 +577,14 @@ class TelegramBot:
         """Chat'i temizler (kendisi hariç tüm mesajları siler)"""
         try:
             chat_id = update.effective_chat.id
+            current_message_id = update.effective_message.message_id
             
-            # Bot'un gönderdiği tüm mesajları sil
+            # Bot'un gönderdiği tüm mesajları sil (mevcut mesaj hariç)
             message_ids = self.chat_id_to_message_ids.get(chat_id, [])
+            
+            # Mevcut mesajı listeden çıkar
+            if current_message_id in message_ids:
+                message_ids.remove(current_message_id)
             
             if message_ids:
                 for msg_id in message_ids:
@@ -589,8 +594,8 @@ class TelegramBot:
                         # Mesaj silinemezse devam et
                         continue
                 
-                # Listeyi temizle
-                self.chat_id_to_message_ids[chat_id] = []
+                # Listeyi temizle (mevcut mesaj hariç)
+                self.chat_id_to_message_ids[chat_id] = [current_message_id]
                 
                 # Başarı mesajı gönder
                 message = "✅ Chat temizlendi!"
@@ -2477,21 +2482,33 @@ Başlatmak için aşağıdaki butona basın:
         try:
             import subprocess
             import os
+            import logging
+            
+            # Önce bot.log dosyasını kontrol et
+            log_file = "bot.log"
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    all_lines = f.readlines()
+                    recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+                    return ''.join(recent_lines)
             
             # Docker container'da mı çalışıyor kontrol et
             if os.path.exists('/.dockerenv'):
-                # Docker container'da - log dosyası yok, konsol çıktısı kullan
-                return "Docker container'da çalışıyor. Logları Coolify panelinden görüntüleyin.\n\nSon 30 log satırı için SSH ile VPS'e bağlanıp şu komutu çalıştırın:\n\ndocker logs --tail 30 $(docker ps --format '{{.Names}}' | grep python-app)"
+                # Docker container'da - konsol loglarını al
+                try:
+                    # Docker logs komutunu çalıştır
+                    result = subprocess.run(
+                        ['docker', 'logs', '--tail', str(lines), '$(docker ps --format "{{.Names}}" | grep python-app)'],
+                        capture_output=True, text=True, shell=True, timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        return result.stdout
+                    else:
+                        return "Docker logları alınamadı. Coolify panelinden görüntüleyin."
+                except Exception as e:
+                    return f"Docker log hatası: {str(e)}"
             else:
-                # Yerel - log dosyası varsa oku
-                log_file = "bot.log"
-                if os.path.exists(log_file):
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        all_lines = f.readlines()
-                        recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
-                        return ''.join(recent_lines)
-                else:
-                    return "Log dosyası bulunamadı."
+                return "Log dosyası bulunamadı."
                     
         except Exception as e:
             return f"Log okuma hatası: {e}"
@@ -2505,15 +2522,16 @@ Başlatmak için aşağıdaki butona basın:
             if len(logs) > 4000:
                 logs = logs[-4000:] + "\n... (Son 30 satır)"
             
-            message = f"📋 **Son 30 Log Satırı:**\n\n```\n{logs}\n```"
+            message = f"📋 <b>Son 30 Log Satırı:</b>\n\n<code>{logs}</code>"
             
-            # Geri butonu
+            # Yenile ve Geri butonları
             keyboard = [
+                [InlineKeyboardButton("🔄 Yenile", callback_data="show_logs")],
                 [InlineKeyboardButton("⬅️ Geri", callback_data="admin_panel")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await self.edit_or_send_message(update, context, message, reply_markup, parse_mode='Markdown')
+            await self.edit_or_send_message(update, context, message, reply_markup, parse_mode='HTML')
             
         except Exception as e:
             logger.error(f"Log gösterimi hatası: {e}")
